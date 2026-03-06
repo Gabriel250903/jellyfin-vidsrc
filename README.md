@@ -17,7 +17,7 @@ VidSrc Jellyfin is a sophisticated, all-in-one automation tool that scrapes medi
 ### 2. Installation
 1.  **Clone the Repo:**
     ```bash
-    git clone https://github.com/yourusername/jellyfin-vidsrc.git
+    git clone https://github.com/Gabriel250903/jellyfin-vidsrc.git
     cd jellyfin-vidsrc
     ```
 2.  **Install Dependencies:**

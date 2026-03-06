@@ -39,7 +39,9 @@ class DownloadHandler(FileSystemEventHandler):
             else:
                 return
 
-            if is_srt and not self.app.sub_only_var.get():
+            if is_video and self.app.sub_only_var.get():
+                return
+            if is_srt and self.app.video_only_var.get():
                 return
 
             fname = os.path.basename(path)
@@ -66,7 +68,7 @@ class DownloadHandler(FileSystemEventHandler):
                 s_num, e_num = match.group(1), match.group(2)
                 task_id = f"S{s_num.zfill(2)}E{e_num.zfill(2)}"
 
-                if is_video and name and year:
+                if (is_video or is_srt) and name and year:
                     from core.utils import sanitize_path
 
                     clean_name = sanitize_path(name)
@@ -81,7 +83,7 @@ class DownloadHandler(FileSystemEventHandler):
                             pass
             else:
                 task_id = "MOVIE"
-                if is_video and name and year:
+                if (is_video or is_srt) and name and year:
                     from core.utils import sanitize_path
 
                     new_fname = (

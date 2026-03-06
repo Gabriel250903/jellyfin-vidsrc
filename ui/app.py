@@ -272,21 +272,6 @@ class VidSrcJellyfin(ctk.CTk):
         )
         self.btn_select_eps.pack(side="left", padx=5)
 
-        self.lbl_con = ctk.CTkLabel(
-            input_f, text="Threads: 3", font=("Segoe UI", 12, "bold"), width=80
-        )
-        self.lbl_con.pack(side="left", padx=10)
-        self.con_slider = ctk.CTkSlider(
-            input_f,
-            from_=1,
-            to=5,
-            number_of_steps=4,
-            width=100,
-            command=lambda v: self.lbl_con.configure(text=f"Threads: {int(v)}"),
-        )
-        self.con_slider.pack(side="left")
-        self.con_slider.set(3)
-
         self.quality_var = ctk.StringVar(value="1080p")
         self.sub_only_var = ctk.BooleanVar(value=False)
         self.video_only_var = ctk.BooleanVar(value=False)
@@ -433,18 +418,41 @@ class VidSrcJellyfin(ctk.CTk):
             pass
         self.save_settings()
 
-    def update_task_status(self, task_id, status, progress=None):
+    def update_task_status(self, task_id, status, progress=None, retry=0):
         def _ui_action():
             if task_id not in self.active_tasks:
+                if retry < 10:
+                    self.after(100, lambda: self.update_task_status(task_id, status, progress, retry + 1))
                 return
             t = self.active_tasks[task_id]
-            if t.get("done") and status != "FINISHED":
+            if t.get("done") and status != "FINISHED" and status != "ALREADY FOUND" and status != "NOT FOUND":
                 return
+            if not t.get("stat"): # UI widget might not be created yet
+                if retry < 10:
+                    self.after(100, lambda: self.update_task_status(task_id, status, progress, retry + 1))
+                return
+            
             t["stat"].configure(text=status.upper())
             if status == "FINISHED":
                 if not t.get("done"):
                     t["done"] = True
                     t["stat"].configure(text_color="#2ecc71")
+                    self.items_completed += 1
+                    self.update_eta()
+                t["progress_val"] = 1.0
+                t["prog"].set(1.0)
+            elif status == "NOT FOUND":
+                if not t.get("done"):
+                    t["done"] = True
+                    t["stat"].configure(text_color="#e74c3c")
+                    self.items_completed += 1
+                    self.update_eta()
+                t["progress_val"] = 1.0
+                t["prog"].set(1.0)
+            elif status == "ALREADY FOUND":
+                if not t.get("done"):
+                    t["done"] = True
+                    t["stat"].configure(text_color="#f1c40f")
                     self.items_completed += 1
                     self.update_eta()
                 t["progress_val"] = 1.0
@@ -529,34 +537,37 @@ class VidSrcJellyfin(ctk.CTk):
                         if t_m:
                             s_num, ep_num = int(t_m.group(1)), int(t_m.group(2))
 
-                    video_found = False
+                    target_file_found = False
+                    sub_only = self.sub_only_var.get()
+                    video_only = self.video_only_var.get()
+
                     for f in files:
-                        if not f.endswith(".crdownload") and f.lower().endswith(
-                            (".mp4", ".mkv")
-                        ):
-                            try:
-                                if (
-                                    os.path.getsize(os.path.join(task_folder, f))
-                                    > 1000000
-                                ):
-                                    if tid == "MOVIE":
-                                        video_found = True
-                                        break
-                                    elif s_num is not None:
-                                        patterns = [
-                                            rf"[sS]0*{s_num}[eE]0*{ep_num}(?!\d)",
-                                            rf"0*{s_num}x0*{ep_num}(?!\d)",
-                                            rf"[eE]0*{ep_num}(?!\d)",
-                                        ]
-                                        if any(
-                                            re.search(p, f, re.IGNORECASE)
-                                            for p in patterns
-                                        ):
-                                            video_found = True
+                        is_video = f.lower().endswith((".mp4", ".mkv"))
+                        is_srt = f.lower().endswith(".srt")
+                        
+                        if not f.endswith(".crdownload"):
+                            if (sub_only and is_srt) or (video_only and is_video) or (not sub_only and not video_only and is_video):
+                                try:
+                                    # For videos, check size. For subs, any size is fine.
+                                    if is_srt or os.path.getsize(os.path.join(task_folder, f)) > 1000000:
+                                        if tid == "MOVIE":
+                                            target_file_found = True
                                             break
-                            except:
-                                continue
-                    if video_found:
+                                        elif s_num is not None:
+                                            patterns = [
+                                                rf"[sS]0*{s_num}[eE]0*{ep_num}(?!\d)",
+                                                rf"0*{s_num}x0*{ep_num}(?!\d)",
+                                                rf"[eE]0*{ep_num}(?!\d)",
+                                            ]
+                                            if any(
+                                                re.search(p, f, re.IGNORECASE)
+                                                for p in patterns
+                                            ):
+                                                target_file_found = True
+                                                break
+                                except:
+                                    continue
+                    if target_file_found:
                         self.update_task_status(tid, "FINISHED")
                         continue
 
@@ -664,7 +675,6 @@ class VidSrcJellyfin(ctk.CTk):
                 "start_season": self.start_season.get(),
                 "end_season": self.end_season.get(),
                 "resume_ep": self.resume_ep.get(),
-                "threads": int(self.con_slider.get()),
                 "quality": self.quality_var.get(),
                 "sub_only": self.sub_only_var.get(),
                 "video_only": self.video_only_var.get(),
@@ -771,7 +781,6 @@ class VidSrcJellyfin(ctk.CTk):
                     "movie",
                     media_name=name,
                     quality=task["quality"],
-                    threads=task["threads"],
                     sub_only=task["sub_only"],
                     video_only=task["video_only"],
                 )
@@ -797,7 +806,6 @@ class VidSrcJellyfin(ctk.CTk):
                             selection_map[s],
                             media_name=name,
                             quality=task["quality"],
-                            threads=task["threads"],
                             sub_only=task["sub_only"],
                             video_only=task["video_only"],
                         )
@@ -831,7 +839,6 @@ class VidSrcJellyfin(ctk.CTk):
                             start_ep if s == sf else 1,
                             media_name=name,
                             quality=task["quality"],
-                            threads=task["threads"],
                             sub_only=task["sub_only"],
                             video_only=task["video_only"],
                         )
