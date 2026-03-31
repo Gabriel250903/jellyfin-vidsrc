@@ -36,6 +36,34 @@ class DownloadQueueManager:
                 return True
         return False
 
+    def move_up(self, index):
+        with self.lock:
+            if 1 <= index < len(self.tasks):
+                self.tasks[index], self.tasks[index - 1] = (
+                    self.tasks[index - 1],
+                    self.tasks[index],
+                )
+                return True
+        return False
+
+    def move_down(self, index):
+        with self.lock:
+            if 0 <= index < len(self.tasks) - 1:
+                self.tasks[index], self.tasks[index + 1] = (
+                    self.tasks[index + 1],
+                    self.tasks[index],
+                )
+                return True
+        return False
+
+    def move_to_top(self, index):
+        with self.lock:
+            if 0 < index < len(self.tasks):
+                task = self.tasks.pop(index)
+                self.tasks.insert(0, task)
+                return True
+        return False
+
     def _worker(self):
         while True:
             try:

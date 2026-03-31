@@ -74,28 +74,15 @@ class VidSrcScraper:
                 pass
         self.app.driver = self.create_driver(folder)
         ep = start_ep if start_ep is not None else 1
-
         actual_max = max_eps if not is_retry else (start_ep if start_ep else max_eps)
-
         count_since_restart = 0
 
         while not self.app.stop_event.is_set() and ep <= actual_max:
-            if count_since_restart >= 10:
-                self.app.log("SCRAPER: Refreshing browser session...")
-                self.app.wait_for_done(folder, quit_driver=False)
-                try:
-                    self.app.driver.quit()
-                except:
-                    pass
-                self.app.driver = self.create_driver(folder)
-                count_since_restart = 0
-
             task_id = (
                 f"S{str(s).zfill(2) if s else '01'}E{str(ep).zfill(2)}"
                 if s
                 else "MOVIE"
             )
-
             display_name = (
                 f"{media_name} - {task_id.replace('S', 'S').replace('E', ' E')}"
                 if s
@@ -109,6 +96,11 @@ class VidSrcScraper:
                 ),
             )
 
+            time.sleep(0.1)
+
+            if is_retry:
+                self.app.update_task_status(task_id, "RETRYING", 0.1)
+
             target_found = False
             if s:
                 ep_pattern = (
@@ -121,7 +113,7 @@ class VidSrcScraper:
                                 target_found = True
                                 break
                         else:
-                            if f.lower().endswith((".mp4", ".mkv", ".crdownload")):
+                            if f.lower().endswith((".mp4", ".mkv")):
                                 target_found = True
                                 break
             else:
@@ -139,25 +131,44 @@ class VidSrcScraper:
                                 break
 
             if target_found:
-                if sub_only:
-                    self.app.log(f"SCRAPER: Subtitles already exist for {task_id}")
-                    self.app.update_task_status(task_id, "ALREADY FOUND")
-                else:
-                    self.app.update_task_status(task_id, "FINISHED")
+                self.app.log(f"SCRAPER: {task_id} already exists. Skipping.")
+                self.app.update_task_status(
+                    task_id, "ALREADY FOUND" if sub_only else "FINISHED"
+                )
                 ep += 1
                 continue
 
-            if self.app.stop_event.is_set():
-                break
+            if count_since_restart >= 5:
+                self.app.log("SCRAPER: Refreshing session after 5 downloads...")
+                self.app.wait_for_done(folder, quit_driver=False)
+                try:
+                    self.app.driver.quit()
+                except:
+                    pass
+                self.app.driver = self.create_driver(folder)
+                count_since_restart = 0
 
             t_url = f"https://dl.vidsrc.vip/{type_m}/{tid}" + (
                 f"/{s}/{ep}" if type_m == "tv" else ""
             )
-            self.app.log(f"SCRAPER: Fetching {task_id} for {media_name}")
+            self.app.log(f"SCRAPER: Fetching {task_id}...")
             self.app.update_task_status(task_id, "FETCHING", 0.2)
 
             try:
-                self.app.driver.get(t_url)
+                nav_success = False
+                for nav_attempt in range(2):
+                    try:
+                        self.app.driver.get(t_url)
+                        WebDriverWait(self.app.driver, 25).until(
+                            lambda d: "No download links" in d.page_source
+                            or len(d.find_elements(By.TAG_NAME, "button")) > 2
+                        )
+                        nav_success = True
+                        break
+                    except:
+                        if nav_attempt == 0:
+                            self.app.driver.refresh()
+                            time.sleep(3)
 
                 if self.check_no_links(task_id, media_name):
                     self.app.update_task_status(task_id, "SKIPPED")
@@ -169,15 +180,13 @@ class VidSrcScraper:
                     if self.app.stop_event.is_set():
                         break
                     try:
-                        time.sleep(2)
-
+                        time.sleep(3)
                         pre_count = len(
                             [f for f in os.listdir(folder) if f.endswith(".crdownload")]
                         )
 
                         target_q = quality
                         q_list = ["1080p", "720p", "480p"]
-
                         try:
                             start_idx = q_list.index(target_q)
                             q_to_try = q_list[start_idx:]
@@ -186,15 +195,13 @@ class VidSrcScraper:
 
                         btn = None
                         try:
-                            btn = WebDriverWait(self.app.driver, 10).until(
+                            btn = WebDriverWait(self.app.driver, 15).until(
                                 EC.element_to_be_clickable(
                                     (By.XPATH, f"//button[contains(., '{target_q}')]")
                                 )
                             )
                         except:
                             for q in q_to_try:
-                                if q == target_q:
-                                    continue
                                 try:
                                     btn = self.app.driver.find_element(
                                         By.XPATH, f"//button[contains(., '{q}')]"
@@ -211,7 +218,7 @@ class VidSrcScraper:
                                 self.app.update_task_status(task_id, "SKIPPED")
                                 success = True
                                 break
-                            raise Exception("Quality buttons not found")
+                            raise Exception("Buttons not found")
 
                         if not sub_only:
                             self.app.driver.execute_script("arguments[0].click();", btn)
@@ -219,7 +226,7 @@ class VidSrcScraper:
                         sub_clicked = False
                         if not video_only:
                             try:
-                                s_btn = WebDriverWait(self.app.driver, 3).until(
+                                s_btn = WebDriverWait(self.app.driver, 5).until(
                                     EC.element_to_be_clickable(
                                         (
                                             By.XPATH,
@@ -230,8 +237,8 @@ class VidSrcScraper:
                                 self.app.driver.execute_script(
                                     "arguments[0].click();", s_btn
                                 )
-                                time.sleep(0.5)
-                                e_btn = WebDriverWait(self.app.driver, 3).until(
+                                time.sleep(1)
+                                e_btn = WebDriverWait(self.app.driver, 5).until(
                                     EC.element_to_be_clickable(
                                         (
                                             By.XPATH,
@@ -244,11 +251,7 @@ class VidSrcScraper:
                                 )
                                 sub_clicked = True
                             except:
-                                if sub_only:
-                                    self.app.log(f"SCRAPER: No English subtitles found for {task_id}")
-                                    self.app.update_task_status(task_id, "NOT FOUND")
-                                    success = True # To break the attempt loop
-                                    break
+                                pass
 
                         started = False
                         pattern = (
@@ -256,56 +259,39 @@ class VidSrcScraper:
                             if s
                             else None
                         )
-
-                        for _ in range(30):
+                        for _ in range(40):
                             if self.app.stop_event.is_set():
                                 break
-
                             current_files = os.listdir(folder)
                             post_count = len(
                                 [f for f in current_files if f.endswith(".crdownload")]
                             )
-
                             found_specific = False
-                            if pattern:
-                                if any(
-                                    re.search(pattern, f, re.I)
-                                    and f.endswith(".crdownload")
-                                    for f in current_files
-                                ):
-                                    found_specific = True
-
+                            if pattern and any(
+                                re.search(pattern, f, re.I)
+                                and f.endswith(".crdownload")
+                                for f in current_files
+                            ):
+                                found_specific = True
                             if post_count > pre_count or found_specific:
                                 started = True
                                 break
                             time.sleep(0.5)
 
-                        if started:
+                        if started or (sub_only and sub_clicked):
                             self.app.update_task_status(task_id, "DOWNLOADING", 0.5)
                             success = True
                             count_since_restart += 1
-                            time.sleep(1)
+                            time.sleep(1.5)
                             break
-                        elif sub_only and sub_clicked:
-                            # Subtitles are small and might not show as .crdownload
-                            self.app.update_task_status(task_id, "DOWNLOADING", 0.5)
-                            success = True
-                            count_since_restart += 1
-                            time.sleep(1)
-                            break
-                        elif not sub_only and not video_only:
-                             # If we were doing both and at least one might have started
-                             success = True
-                             break
-
                     except:
                         self.app.driver.refresh()
-                        time.sleep(3)
+                        time.sleep(4)
 
                 if not success and not is_retry:
                     self.app.failed_tasks.append((folder, tid, type_m, s, ep))
                 ep += 1
-            except Exception as e:
+            except:
                 if not is_retry:
                     self.app.failed_tasks.append((folder, tid, type_m, s, ep))
                 ep += 1
@@ -334,7 +320,6 @@ class VidSrcScraper:
         for ep in ep_list:
             if self.app.stop_event.is_set():
                 break
-
             task_id = f"S{str(s).zfill(2)}E{str(ep).zfill(2)}"
             display_name = f"{media_name} - S{str(s).zfill(2)} E{str(ep).zfill(2)}"
 
@@ -344,6 +329,7 @@ class VidSrcScraper:
                     tid, f, dn
                 ),
             )
+            time.sleep(0.1)
 
             target_found = False
             ep_pattern = (
@@ -356,18 +342,18 @@ class VidSrcScraper:
                             target_found = True
                             break
                     else:
-                        if f.lower().endswith((".mp4", ".mkv", ".crdownload")):
+                        if f.lower().endswith((".mp4", ".mkv")):
                             target_found = True
                             break
+
             if target_found:
-                if sub_only:
-                    self.app.log(f"SCRAPER: Subtitles already exist for {task_id}")
-                    self.app.update_task_status(task_id, "ALREADY FOUND")
-                else:
-                    self.app.update_task_status(task_id, "FINISHED")
+                self.app.log(f"SCRAPER: {task_id} already exists. Skipping.")
+                self.app.update_task_status(
+                    task_id, "ALREADY FOUND" if sub_only else "FINISHED"
+                )
                 continue
 
-            if count_since_restart >= 10:
+            if count_since_restart >= 5:
                 self.app.wait_for_done(folder, quit_driver=False)
                 try:
                     self.app.driver.quit()
@@ -377,10 +363,24 @@ class VidSrcScraper:
                 count_since_restart = 0
 
             t_url = f"https://dl.vidsrc.vip/tv/{tid}/{s}/{ep}"
+            self.app.log(f"SCRAPER: Fetching {task_id}...")
             self.app.update_task_status(task_id, "FETCHING", 0.2)
 
             try:
-                self.app.driver.get(t_url)
+                nav_success = False
+                for nav_attempt in range(2):
+                    try:
+                        self.app.driver.get(t_url)
+                        WebDriverWait(self.app.driver, 25).until(
+                            lambda d: "No download links" in d.page_source
+                            or len(d.find_elements(By.TAG_NAME, "button")) > 2
+                        )
+                        nav_success = True
+                        break
+                    except:
+                        if nav_attempt == 0:
+                            self.app.driver.refresh()
+                            time.sleep(3)
 
                 if self.check_no_links(task_id, media_name):
                     self.app.update_task_status(task_id, "SKIPPED")
@@ -391,14 +391,13 @@ class VidSrcScraper:
                     if self.app.stop_event.is_set():
                         break
                     try:
-                        time.sleep(2)
+                        time.sleep(3)
                         pre_count = len(
                             [f for f in os.listdir(folder) if f.endswith(".crdownload")]
                         )
 
                         target_q = quality
                         q_list = ["1080p", "720p", "480p"]
-
                         try:
                             start_idx = q_list.index(target_q)
                             q_to_try = q_list[start_idx:]
@@ -407,15 +406,13 @@ class VidSrcScraper:
 
                         btn = None
                         try:
-                            btn = WebDriverWait(self.app.driver, 10).until(
+                            btn = WebDriverWait(self.app.driver, 15).until(
                                 EC.element_to_be_clickable(
                                     (By.XPATH, f"//button[contains(., '{target_q}')]")
                                 )
                             )
                         except:
                             for q in q_to_try:
-                                if q == target_q:
-                                    continue
                                 try:
                                     btn = self.app.driver.find_element(
                                         By.XPATH, f"//button[contains(., '{q}')]"
@@ -432,7 +429,7 @@ class VidSrcScraper:
                                 self.app.update_task_status(task_id, "SKIPPED")
                                 success = True
                                 break
-                            raise Exception("Quality buttons not found")
+                            raise Exception("Buttons not found")
 
                         if not sub_only:
                             self.app.driver.execute_script("arguments[0].click();", btn)
@@ -440,7 +437,7 @@ class VidSrcScraper:
                         sub_clicked = False
                         if not video_only:
                             try:
-                                s_btn = WebDriverWait(self.app.driver, 3).until(
+                                s_btn = WebDriverWait(self.app.driver, 5).until(
                                     EC.element_to_be_clickable(
                                         (
                                             By.XPATH,
@@ -451,8 +448,8 @@ class VidSrcScraper:
                                 self.app.driver.execute_script(
                                     "arguments[0].click();", s_btn
                                 )
-                                time.sleep(0.5)
-                                e_btn = WebDriverWait(self.app.driver, 3).until(
+                                time.sleep(1)
+                                e_btn = WebDriverWait(self.app.driver, 5).until(
                                     EC.element_to_be_clickable(
                                         (
                                             By.XPATH,
@@ -465,25 +462,17 @@ class VidSrcScraper:
                                 )
                                 sub_clicked = True
                             except:
-                                if sub_only:
-                                    self.app.log(f"SCRAPER: No English subtitles found for {task_id}")
-                                    self.app.update_task_status(task_id, "NOT FOUND")
-                                    success = True # To break the attempt loop
-                                    break
+                                pass
 
-                        time.sleep(1)
                         started = False
                         pattern = rf"[sS]0*{s}[eE]0*{ep}(?!\d)|0*{s}x0*{ep}(?!\d)|[eE]0*{ep}(?!\d)"
-
-                        for _ in range(30):
+                        for _ in range(40):
                             if self.app.stop_event.is_set():
                                 break
-
                             current_files = os.listdir(folder)
                             post_count = len(
                                 [f for f in current_files if f.endswith(".crdownload")]
                             )
-
                             found_specific = False
                             if any(
                                 re.search(pattern, f, re.I)
@@ -491,33 +480,21 @@ class VidSrcScraper:
                                 for f in current_files
                             ):
                                 found_specific = True
-
                             if post_count > pre_count or found_specific:
                                 started = True
                                 break
                             time.sleep(0.5)
 
-                        if started:
+                        if started or (sub_only and sub_clicked):
                             self.app.update_task_status(task_id, "DOWNLOADING", 0.5)
                             success = True
                             count_since_restart += 1
-                            time.sleep(1)
+                            time.sleep(1.5)
                             break
-                        elif sub_only and sub_clicked:
-                            # Subtitles are small and might not show as .crdownload
-                            self.app.update_task_status(task_id, "DOWNLOADING", 0.5)
-                            success = True
-                            count_since_restart += 1
-                            time.sleep(1)
-                            break
-                        elif not sub_only and not video_only:
-                             # If we were doing both and at least one might have started
-                             success = True
-                             break
-
                     except:
                         self.app.driver.refresh()
-                        time.sleep(3)
+                        time.sleep(4)
+
                 if not success and not is_retry:
                     self.app.failed_tasks.append((folder, tid, "tv", s, ep))
             except:

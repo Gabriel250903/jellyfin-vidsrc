@@ -35,6 +35,16 @@ VidSrc Jellyfin is a sophisticated, all-in-one automation tool that scrapes medi
 
 To unlock the full power of the app, click the **Gear Icon** in the sidebar to open Settings.
 
+### 🎮 Discord Rich Presence (RPC)
+The app now includes a fully customizable Discord RPC that shows what you are currently watching on your Jellyfin server.
+1.  Click the **🎮 Discord RPC** button in the sidebar.
+2.  **Toggle "Enable Discord RPC"** to start showing your activity.
+3.  **Customization:**
+    *   **Client ID:** Use the default or provide your own Discord Application ID.
+    *   **Target User:** Filter the presence to only show when a specific user is watching.
+    *   **Features:** Toggle playback time, server name, and interactive "View on TMDB" buttons.
+4.  **Assets:** If using a custom ID, ensure you upload `jellyfin_logo`, `play`, and `pause` to your Discord Developer Portal.
+
 ### 🔑 Setting up TMDB (Required for Search & Metadata)
 The app uses The Movie Database (TMDB) to find movies, posters, and plot summaries.
 1.  Go to [themoviedb.org](https://www.themoviedb.org/) and create a free account.
@@ -50,10 +60,8 @@ Connecting Jellyfin allows the app to trigger library scans and monitor your ser
 3.  Create a new key named "VidSrc Jellyfin".
 4.  Copy the key and paste it into the **API Key** field in the app's Jellyfin section.
 5.  **Enter your Server URL:**
-    *   Open your terminal/command prompt and type `ipconfig`.
-    *   Look for your **IPv4 Address** (e.g., `192.168.1.100`).
     *   Your URL should look like `http://192.168.1.100:8096`.
-6.  Enable **"Show Jellyfin features"** to unlock the Live Dashboard.
+6.  Enable **"Show Jellyfin features"** to unlock the Live Dashboard and RPC tracking.
 
 ### 💬 Setting up Discord Notifications (Optional)
 Want to know when your show is ready while you're away?
@@ -64,15 +72,13 @@ Want to know when your show is ready while you're away?
 ### 📁 Setting up Media Storage
 The app is designed to keep your library perfectly organized for Jellyfin without any manual folder creation.
 1.  In the app, click the **Folder Icon** ("Library Path") to select your main media directory (e.g., `C:\Jellyfin`).
-2.  **Automatic Organization:** Once you select a root folder, the app will automatically create two subfolders: `/Movies` and `/Shows` (only upon downloading a movie and/or show). 
+2.  **Automatic Organization:** Once you select a root folder, the app will automatically create two subfolders: `/Movies` and `/Shows`. 
 3.  **Smart Routing:** When you download a movie, it goes to `/Movies`. When you download a series, it goes to `/Shows`, complete with season subfolders and metadata. 
-    *   *Note: If you accidentally select an existing `/Movies` or `/Shows` folder as the root, the app is smart enough to move up one level and maintain the correct structure.*
 
 ### 🎬 Setting Default Quality
 You can control the resolution of your downloads to save space or ensure the highest fidelity.
 1.  Open **Settings** and scroll down to **DEFAULT QUALITY**.
 2.  Select between **480p**, **720p**, or **1080p**.
-3.  **Note:** VidSrc primarily distributes within this range. Higher resolutions like 2K or 4K are not supported as they are rarely available.
 
 ---
 
@@ -80,49 +86,66 @@ You can control the resolution of your downloads to save space or ensure the hig
 
 ### Step 1: Search and Select
 *   Toggle between **TV Show** and **Movie** mode in the sidebar.
-*   Type your query in the search bar. You can search by name or even by **TMDB ID** and the movie/show initial release year.
-*   Click **SELECT** on the correct result. The app will automatically fetch the poster and season data.
+*   Type your query in the search bar. You can search by name or even by **TMDB ID**.
+*   Click **SELECT** on the correct result.
 
 ### Step 2: Add to Queue
 *   **Configure the Batch:** 
-    *   **For TV Shows:** Choose a **Season Range** (e.g., Season 1 to 5) or use the **Episode Selector** to pick specific episodes.
-    *   **Settings:** Set the **Threads** slider (determines how many downloads to attempt simultaneously).
+    *   **For TV Shows:** Choose a **Season Range** or use the **Episode Selector** to pick specific episodes.
 *   **Run:** Click the green **START PROCESS** button. This will automatically add the media to the background queue manager.
-*   **Multi-Tasking:** You can repeat the search and selection process for as many movies or shows as you like. Each time you hit **START PROCESS**, the item is added to the end of the queue.
 
 ### Step 3: Manage the Queue
 *   **Pending Queue:** Click the **⏳ PENDING QUEUE** button in the sidebar to see all currently waiting tasks.
-*   **Delete Tasks:** Inside the queue window, you can remove any specific movie or show from the list if you change your mind.
-
-*💡 Performance Tip: It is recommended to keep your pending queue to **a maximum of 10 items**. Because each task can spawn multiple background threads, having a massive queue may cause the UI to become laggy.*
+*   **Delete Tasks:** Inside the queue window, you can remove or reorder tasks.
 
 ### Step 4: Automation in Action
 Once a task reaches the front of the queue, the app takes over:
-1.  **Scraping:** It launches a headless browser to find the best high-quality links.
+1.  **Scraping:** It launches a headless browser to find the best links.
 2.  **Downloading:** Files are sent to your target folder.
-3.  **Renaming:** The built-in **Watchdog** detects finished downloads and renames them to a professional format (e.g., `Movie Name (Year).mp4`).
-4.  **Metadata:** It writes a `.nfo` file containing the plot, rating, and genres, and saves `poster.jpg`.
-5.  **Finalizing:** If connected, it tells Jellyfin to scan the folder and sends a notification to your Discord.
+3.  **Renaming:** The built-in **Watchdog** detects finished downloads and renames them professionally.
+4.  **Metadata:** It writes `.nfo` files and saves `poster.jpg`.
+5.  **Finalizing:** If connected, it tells Jellyfin to scan the folder and sends a Discord notification.
+
+---
+
+## 📦 Standalone Bundling (.exe)
+
+You can bundle the entire application into a single, portable Windows executable:
+
+1.  **Install PyInstaller:**
+    ```bash
+    pip install pyinstaller
+    ```
+2.  **Run the Build Command:**
+    ```bash
+    pyinstaller --noconsole --onefile --name "VidSrcJellyfin" --icon="NONE" --add-data "api;api" --add-data "core;core" --add-data "ui;ui" main.py
+    ```
+3.  **Result:** Your standalone app will be in the `dist/` folder. The app will automatically create and maintain `jellyfin_config.json` in the same directory as the `.exe`.
 
 ---
 
 ## ⚠️ Known Limitations & Troubleshooting
 
 ### 🛑 Rate Limiting
-*   **Media Scraping:** If you are batch-downloading hundreds of episodes at once, the source providers may occasionally rate-limit your connection. If this happens, some episodes might be skipped. **Always verify your download folder** after a large batch is finished to ensure every episode was successfully captured.
-*   **Subtitle Provider:** The subtitle source is an external service that can experience high traffic. If the service is under heavy load, it may temporarily rate-limit requests, causing subtitles to fail for some files. This is an external factor and cannot be fixed within the app.
+*   **Media Scraping:** If you are batch-downloading hundreds of episodes at once, providers may occasionally rate-limit your connection. **Always verify your download folder** after a large batch.
+*   **Subtitle Provider:** Subtitle sources can experience high traffic and may temporarily rate-limit requests.
 
 ### 📝 Subtitle Language
-*   **English Only:** Subtitles are currently only supported in English. This is because the underlying providers (VidSrc) rarely offer subtitle tracks in other languages.
+*   **English Only:** Subtitles are currently only supported in English.
 
 ---
 
 ## ✨ Features at a Glance
-*   **Headless Scraping:** No annoying browser windows popping up.
-*   **Professional Organization:** Automatic folder structures (`Show Name/Season 01/`).
-*   **Subtitles:** English `.srt` files are automatically fetched and renamed to match your video.
-*   **Live Dashboard:** Monitor server storage and active streams in real-time.
-*   **History Management:** Keep track of what you've downloaded and delete items from your server directly from the app.
+*   **🚀 High-Performance UI:** Experience "Nuclear Resize Optimization" (Dynamic UI Hiding) for perfectly smooth 60FPS window movement and resizing.
+*   **📱 Responsive & Robust Design:** All windows (Main, Settings, Dashboard) feature smart minimum/maximum constraints and adaptive grid layouts.
+*   **🎮 Discord Rich Presence:** Show off what you're watching with posters, progress bars, and TMDB links.
+*   **⚡ Optimized Resource Usage:** Zero Disk I/O on the main thread. Heavy background tasks and API checks are offloaded to dedicated threads.
+*   **🧹 Smart Log Management:** Batched processing and automated log pruning (500-line cap) ensure long-term application speed.
+*   **📦 Metadata Caching:** Efficiently fetches and stores TMDB/Jellyfin metadata to save API limits.
+*   **👻 Headless Scraping:** No annoying browser windows popping up during the download process.
+*   **🗂️ Professional Organization:** Automatic, industry-standard folder structures (`Show Name/Season 01/`).
+*   **📊 Live Dashboard:** Monitor server storage and active streams in real-time.
+*   **📜 History Management:** Keep track of downloads and delete server items directly from the app.
 
 ---
 

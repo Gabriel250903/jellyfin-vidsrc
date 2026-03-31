@@ -3,6 +3,7 @@ from tkinter import filedialog, messagebox
 import threading
 import time
 import os
+import sys
 import re
 import json
 import requests
@@ -17,6 +18,9 @@ from core.queue_manager import DownloadQueueManager
 from api.jellyfin_api import JellyfinAPI
 from api.tmdb_api import TMDBAPI
 from ui.jellyfin_dashboard import JellyfinDashboard
+from ui.rpc_settings import RPCSettingsWindow
+from ui.settings_window import SettingsWindow
+from api.discord_rpc import DiscordRPCManager
 
 
 class VidSrcJellyfin(ctk.CTk):
@@ -25,6 +29,7 @@ class VidSrcJellyfin(ctk.CTk):
 
         self.title("VidSrc Jellyfin")
         self.geometry("1350x1050")
+        self.minsize(1000, 800)
         ctk.set_appearance_mode("dark")
 
         self.stop_event = threading.Event()
@@ -57,7 +62,21 @@ class VidSrcJellyfin(ctk.CTk):
         self.local_free_gb = 9999
         self.missing_links = []
 
-        self.config_file = resource_path("jellyfin_config.json")
+        self._last_vals = {}
+        self._is_resizing = False
+        self._resize_timer = None
+
+        self.rpc_enabled = False
+        self.rpc_client_id = ""
+        self.rpc_target_user = ""
+        self.rpc_show_time = True
+        self.rpc_show_server = True
+
+        if getattr(sys, 'frozen', False):
+            self.config_file = os.path.join(os.path.dirname(sys.executable), "jellyfin_config.json")
+        else:
+            self.config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "jellyfin_config.json")
+
         self.show_path = r"C:\Jellyfin\Shows"
         self.movie_path = r"C:\Jellyfin\Movies"
         self.observer = Observer()
@@ -68,6 +87,10 @@ class VidSrcJellyfin(ctk.CTk):
         self.queue_manager = DownloadQueueManager(self)
 
         self.jelly_dashboard = None
+        self.rpc_settings_window = None
+        self.settings_window = None
+
+        self.grid_columnconfigure(0, minsize=350)
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -75,39 +98,74 @@ class VidSrcJellyfin(ctk.CTk):
         self.setup_sidebar()
         self.setup_main_view()
         self.load_settings()
+        
+        self.discord_rpc = DiscordRPCManager(self)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
         self.update_loop()
         self.after(0, lambda: self.state("zoomed"))
+        self.bind("<Configure>", self._on_configure)
+
+    def _on_configure(self, event):
+        if event.widget == self:
+            if not self._is_resizing:
+                self._is_resizing = True
+                self.sidebar.grid_remove()
+                self.main_view.grid_remove()
+
+            if self._resize_timer:
+                self.after_cancel(self._resize_timer)
+            self._resize_timer = self.after(400, self._stop_resize_flag)
+
+    def _stop_resize_flag(self):
+        self._is_resizing = False
+        self._resize_timer = None
+        self.sidebar.grid()
+        self.main_view.grid()
+
+    def _safe_configure(self, widget, key, val):
+        cache_key = f"{id(widget)}_{key}"
+        if self._last_vals.get(cache_key) != val:
+            widget.configure(**{key: val})
+            self._last_vals[cache_key] = val
+
+    def on_closing(self):
+        if hasattr(self, 'discord_rpc') and self.discord_rpc:
+            self.discord_rpc.stop()
+        self.destroy()
 
     def setup_sidebar(self):
         self.sidebar = ctk.CTkFrame(
-            self, width=320, corner_radius=0, fg_color=("#ebebeb", "#111111")
+            self, width=350, corner_radius=0, fg_color=("#ebebeb", "#111111"), border_width=0
         )
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         self.sidebar.grid_rowconfigure(7, weight=1)
+        self.sidebar.grid_columnconfigure(0, weight=1)
 
         self.logo_label = ctk.CTkLabel(
             self.sidebar,
             text="VidSrc Jellyfin",
-            font=("Segoe UI", 18, "bold"),
+            font=("Segoe UI", 22, "bold"),
             text_color="#3498db",
         )
-        self.logo_label.grid(row=0, column=0, pady=(20, 10))
+        self.logo_label.grid(row=0, column=0, pady=(30, 15))
 
         self.mode_switch = ctk.CTkSegmentedButton(
-            self.sidebar, values=["TV Show", "Movie"], command=self.on_mode_change
+            self.sidebar, values=["TV Show", "Movie"], command=self.on_mode_change,
+            height=35, selected_color="#3498db"
         )
-        self.mode_switch.grid(row=3, column=0, pady=10, padx=20, sticky="ew")
+        self.mode_switch.grid(row=3, column=0, pady=15, padx=20, sticky="ew")
         self.mode_switch.set("TV Show")
 
         self.poster_label = ctk.CTkLabel(
             self.sidebar,
             text="No Preview",
-            width=220,
-            height=300,
+            width=240,
+            height=340,
             fg_color=("#d1d1d1", "#1a1a1a"),
-            corner_radius=10,
+            corner_radius=12,
         )
-        self.poster_label.grid(row=4, column=0, pady=10)
+        self.poster_label.grid(row=4, column=0, pady=15)
 
         history_header = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         history_header.grid(row=5, column=0, sticky="ew", padx=20, pady=(10, 0))
@@ -119,6 +177,8 @@ class VidSrcJellyfin(ctk.CTk):
             text="CLEAR",
             width=50,
             height=20,
+            fg_color="#3498db",
+            hover_color="#2980b9",
             command=self.clear_history,
         )
         self.btn_clear_history.pack(side="right")
@@ -142,7 +202,8 @@ class VidSrcJellyfin(ctk.CTk):
             text="⏳ PENDING QUEUE",
             font=("Segoe UI", 12, "bold"),
             height=30,
-            fg_color="#9b59b6",
+            fg_color="#3498db",
+            hover_color="#2980b9",
             command=self.open_queue_window,
         )
         self.btn_queue.grid(row=8, column=0, sticky="ew", padx=20)
@@ -153,6 +214,7 @@ class VidSrcJellyfin(ctk.CTk):
             font=("Segoe UI", 12, "bold"),
             height=30,
             fg_color="#3498db",
+            hover_color="#2980b9",
             command=self.open_jellyfin_dashboard,
         )
         self.btn_jelly_dashboard.grid(
@@ -162,16 +224,25 @@ class VidSrcJellyfin(ctk.CTk):
         self.lbl_jelly_info = ctk.CTkLabel(self, text="Status: Disconnected")
         self.lbl_jelly_streams = ctk.CTkLabel(self, text="Active Streams: 0")
         self.lbl_storage_info = ctk.CTkLabel(self, text="Storage: -- GB Free")
-        self.storage_prog = ctk.CTkProgressBar(self)
-        self.lbl_local_info = ctk.CTkLabel(self, text="Local: -- GB Free")
-        self.local_prog = ctk.CTkProgressBar(self)
+        self.storage_prog = ctk.CTkProgressBar(self, progress_color="#3498db")
 
         self.bottom_sidebar = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         self.bottom_sidebar.grid(row=10, column=0, sticky="ew", pady=10)
+        self.btn_rpc_settings = ctk.CTkButton(
+            self.bottom_sidebar,
+            text="🎮 Discord RPC",
+            height=30,
+            fg_color="#3498db",
+            hover_color="#2980b9",
+            command=self.open_rpc_settings,
+        )
+        self.btn_rpc_settings.pack(fill="x", padx=20, pady=5)
         self.btn_choose_root = ctk.CTkButton(
             self.bottom_sidebar,
             text="📁 Library Path",
             height=30,
+            fg_color="#3498db",
+            hover_color="#2980b9",
             command=self.choose_root,
         )
         self.btn_choose_root.pack(fill="x", padx=20, pady=5)
@@ -179,6 +250,8 @@ class VidSrcJellyfin(ctk.CTk):
             self.bottom_sidebar,
             text="⚙ Settings",
             height=30,
+            fg_color="#3498db",
+            hover_color="#2980b9",
             command=self.open_settings,
         )
         self.btn_settings.pack(fill="x", padx=20, pady=5)
@@ -230,6 +303,8 @@ class VidSrcJellyfin(ctk.CTk):
             text="SEARCH",
             width=100,
             height=30,
+            fg_color="#3498db",
+            hover_color="#2980b9",
             font=("Segoe UI", 12, "bold"),
             command=lambda: self.tmdb_api.perform_search(
                 self.search_entry.get(), self.search_year.get()
@@ -238,7 +313,8 @@ class VidSrcJellyfin(ctk.CTk):
         self.btn_search.grid(row=0, column=2, padx=(10, 0))
 
         self.results_container = ctk.CTkScrollableFrame(
-            self.content_inner, height=300, fg_color=("#f0f0f0", "#0a0a0a")
+            self.content_inner, height=300, fg_color=("#f0f0f0", "#0a0a0a"),
+            corner_radius=0, border_width=0
         )
         self.results_container.grid(row=1, column=0, sticky="ew")
         self.results_container.grid_remove()
@@ -246,8 +322,8 @@ class VidSrcJellyfin(ctk.CTk):
         self.exec_frame = ctk.CTkFrame(
             self.content_inner,
             fg_color=("#f9f9f9", "#151515"),
-            corner_radius=15,
-            border_width=1,
+            corner_radius=0,
+            border_width=0,
         )
         self.exec_frame.grid(row=2, column=0, sticky="ew", pady=10)
         self.title_display = ctk.CTkLabel(
@@ -267,7 +343,8 @@ class VidSrcJellyfin(ctk.CTk):
             input_f,
             text="SELECT EPS",
             width=80,
-            fg_color="#34495e",
+            fg_color="#3498db",
+            hover_color="#2980b9",
             command=self.open_ep_selector,
         )
         self.btn_select_eps.pack(side="left", padx=5)
@@ -282,11 +359,13 @@ class VidSrcJellyfin(ctk.CTk):
         switches_f.pack(pady=5)
 
         ctk.CTkSwitch(
-            switches_f, text="Subtitles Only Mode", variable=self.sub_only_var
+            switches_f, text="Subtitles Only Mode", variable=self.sub_only_var,
+            progress_color="#3498db"
         ).pack(side="left", padx=10)
 
         ctk.CTkSwitch(
-            switches_f, text="Videos Only Mode", variable=self.video_only_var
+            switches_f, text="Videos Only Mode", variable=self.video_only_var,
+            progress_color="#3498db"
         ).pack(side="left", padx=10)
 
         monitor_header = ctk.CTkFrame(self.content_inner, fg_color="transparent")
@@ -303,12 +382,15 @@ class VidSrcJellyfin(ctk.CTk):
             text="REMOVE FINISHED",
             width=110,
             height=22,
+            fg_color="#3498db",
+            hover_color="#2980b9",
             command=self.clear_finished_tasks,
         )
         self.btn_remove_finished.pack(side="right")
 
         self.task_monitor = ctk.CTkScrollableFrame(
-            self.content_inner, height=220, fg_color=("#f0f0f0", "#0a0a0a")
+            self.content_inner, height=220, fg_color=("#f0f0f0", "#0a0a0a"),
+            corner_radius=0, border_width=0
         )
         self.task_monitor.grid(row=4, column=0, sticky="nsew", pady=5)
 
@@ -317,7 +399,8 @@ class VidSrcJellyfin(ctk.CTk):
         self.btn_run = ctk.CTkButton(
             btn_f,
             text="START PROCESS",
-            fg_color="#2ecc71",
+            fg_color="#3498db",
+            hover_color="#2980b9",
             font=("Segoe UI", 14, "bold"),
             height=45,
             command=self.start_process,
@@ -372,52 +455,6 @@ class VidSrcJellyfin(ctk.CTk):
     def log(self, msg):
         self.log_queue.put(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
 
-    def change_accent(self, color):
-        self.current_accent = color
-        colors = {
-            "Blue": "#3498db",
-            "Purple": "#9b59b6",
-            "Emerald": "#2ecc71",
-            "Amber": "#f1c40f",
-        }
-        accent = colors.get(color, "#3498db")
-        for tid in self.active_tasks:
-            self.active_tasks[tid]["prog"].configure(progress_color=accent)
-        btns = [
-            self.btn_run,
-            self.btn_search,
-            self.btn_select_eps,
-            self.btn_choose_root,
-            self.btn_settings,
-            self.btn_remove_finished,
-            self.btn_clear_history,
-            self.btn_stop,
-            self.btn_jelly_dashboard,
-        ]
-        for b in btns:
-            try:
-                b.configure(fg_color=accent)
-            except:
-                pass
-        try:
-            self.mode_switch.configure(selected_color=accent)
-        except:
-            pass
-        self.lbl_status.configure(text_color=accent)
-        try:
-            self.logo_label.configure(text_color=accent)
-        except:
-            pass
-        try:
-            self.tasks_header_lbl.configure(text_color=accent)
-        except:
-            pass
-        try:
-            self.title_display.configure(text_color=accent)
-        except:
-            pass
-        self.save_settings()
-
     def update_task_status(self, task_id, status, progress=None, retry=0):
         def _ui_action():
             if task_id not in self.active_tasks:
@@ -427,7 +464,7 @@ class VidSrcJellyfin(ctk.CTk):
             t = self.active_tasks[task_id]
             if t.get("done") and status != "FINISHED" and status != "ALREADY FOUND" and status != "NOT FOUND":
                 return
-            if not t.get("stat"): # UI widget might not be created yet
+            if not t.get("stat"):
                 if retry < 10:
                     self.after(100, lambda: self.update_task_status(task_id, status, progress, retry + 1))
                 return
@@ -472,21 +509,15 @@ class VidSrcJellyfin(ctk.CTk):
         label_text = display_name if display_name else task_id
 
         row = ctk.CTkFrame(
-            self.task_monitor, fg_color=("#e0e0e0", "#181818"), height=40
+            self.task_monitor, fg_color=("#e0e0e0", "#181818"), height=40,
+            corner_radius=0, border_width=0
         )
-        row.pack(fill="x", pady=2, padx=5)
+        row.pack(fill="x", pady=1, padx=2)
         ctk.CTkLabel(
             row, text=label_text, width=250, anchor="w", font=("Segoe UI", 11, "bold")
         ).pack(side="left", padx=15)
-        size_lbl = ctk.CTkLabel(row, text="0.0 MB", width=80, font=("Consolas", 10))
-        size_lbl.pack(side="left", padx=5)
-        accent_color = {
-            "Blue": "#3498db",
-            "Purple": "#9b59b6",
-            "Emerald": "#2ecc71",
-            "Amber": "#f1c40f",
-        }.get(self.current_accent, "#3498db")
-        prog = ctk.CTkProgressBar(row, width=300, height=8, progress_color=accent_color)
+        
+        prog = ctk.CTkProgressBar(row, width=380, height=8, progress_color="#3498db")
         prog.pack(side="left", padx=10)
         prog.set(0.05)
         stat = ctk.CTkLabel(
@@ -497,7 +528,6 @@ class VidSrcJellyfin(ctk.CTk):
             "row": row,
             "prog": prog,
             "stat": stat,
-            "size_lbl": size_lbl,
             "done": False,
             "progress_val": 0.05,
             "folder": folder,
@@ -517,123 +547,65 @@ class VidSrcJellyfin(ctk.CTk):
             self.log(f"ERROR clearing tasks: {e}")
 
     def update_loop(self):
-        while not self.log_queue.empty():
-            msg = self.log_queue.get_nowait()
+        if self._is_resizing:
+            self.after(500, self.update_loop)
+            return
+
+        logs_to_add = []
+        count = 0
+        while not self.log_queue.empty() and count < 15:
+            logs_to_add.append(self.log_queue.get_nowait())
+            count += 1
+        
+        if logs_to_add:
             self.log_box.configure(state="normal")
-            self.log_box.insert("end", msg)
+            self.log_box.insert("end", "".join(logs_to_add))
+            
+            total_lines = int(self.log_box.index("end-1c").split(".")[0])
+            if total_lines > 500:
+                self.log_box.delete("1.0", f"{total_lines - 500}.0")
+                
             self.log_box.configure(state="disabled")
             self.log_box.see("end")
 
         for tid, t in list(self.active_tasks.items()):
             if not t["done"]:
                 curr_stat = t["stat"].cget("text")
-                task_folder = t.get("folder")
-                if task_folder and os.path.exists(task_folder):
-                    files = os.listdir(task_folder)
-
-                    s_num, ep_num = None, None
-                    if tid != "MOVIE":
-                        t_m = re.search(r"S(\d+)E(\d+)", tid)
-                        if t_m:
-                            s_num, ep_num = int(t_m.group(1)), int(t_m.group(2))
-
-                    target_file_found = False
-                    sub_only = self.sub_only_var.get()
-                    video_only = self.video_only_var.get()
-
-                    for f in files:
-                        is_video = f.lower().endswith((".mp4", ".mkv"))
-                        is_srt = f.lower().endswith(".srt")
-                        
-                        if not f.endswith(".crdownload"):
-                            if (sub_only and is_srt) or (video_only and is_video) or (not sub_only and not video_only and is_video):
-                                try:
-                                    # For videos, check size. For subs, any size is fine.
-                                    if is_srt or os.path.getsize(os.path.join(task_folder, f)) > 1000000:
-                                        if tid == "MOVIE":
-                                            target_file_found = True
-                                            break
-                                        elif s_num is not None:
-                                            patterns = [
-                                                rf"[sS]0*{s_num}[eE]0*{ep_num}(?!\d)",
-                                                rf"0*{s_num}x0*{ep_num}(?!\d)",
-                                                rf"[eE]0*{ep_num}(?!\d)",
-                                            ]
-                                            if any(
-                                                re.search(p, f, re.IGNORECASE)
-                                                for p in patterns
-                                            ):
-                                                target_file_found = True
-                                                break
-                                except:
-                                    continue
-                    if target_file_found:
-                        self.update_task_status(tid, "FINISHED")
-                        continue
-
-                    if curr_stat == "DOWNLOADING":
-                        try:
-                            found_size = False
-                            cr_files = [x for x in files if x.endswith(".crdownload")]
-                            for f in cr_files:
-                                if tid == "MOVIE" and len(cr_files) == 1:
-                                    found_size = True
-                                elif s_num is not None:
-                                    patterns = [
-                                        rf"[sS]0*{s_num}[eE]0*{ep_num}(?!\d)",
-                                        rf"0*{s_num}x0*{ep_num}(?!\d)",
-                                        rf"[eE]0*{ep_num}(?!\d)",
-                                    ]
-                                    if any(
-                                        re.search(p, f, re.IGNORECASE) for p in patterns
-                                    ):
-                                        found_size = True
-
-                                if found_size:
-                                    size_mb = os.path.getsize(
-                                        os.path.join(task_folder, f)
-                                    ) / (1024 * 1024)
-                                    t["size_lbl"].configure(text=f"{size_mb:.1f} MB")
-                                    break
-
-                            if not found_size and len(cr_files) == 1:
-                                size_mb = os.path.getsize(
-                                    os.path.join(task_folder, cr_files[0])
-                                ) / (1024 * 1024)
-                                t["size_lbl"].configure(text=f"{size_mb:.1f} MB")
-                        except:
-                            pass
-
                 if curr_stat == "DOWNLOADING":
                     if t["progress_val"] < 0.98:
-                        t["progress_val"] += 0.005
+                        t["progress_val"] += 0.002
                         t["prog"].set(t["progress_val"])
                 elif curr_stat == "FETCHING":
                     if t["progress_val"] < 0.4:
-                        t["progress_val"] += 0.002
-                        t["prog"].set(t["progress_val"])
-                if curr_stat == "DOWNLOADING":
-                    if t["progress_val"] < 0.98:
-                        t["progress_val"] += 0.005
-                        t["prog"].set(t["progress_val"])
-                elif curr_stat == "FETCHING":
-                    if t["progress_val"] < 0.4:
-                        t["progress_val"] += 0.002
+                        t["progress_val"] += 0.001
                         t["prog"].set(t["progress_val"])
 
-        self.lbl_speed.configure(text=f"Speed: {self.current_speed}")
-        self.lbl_queue.configure(text=f"Queue: {self.queue_manager.get_queue_size()}")
-        self.lbl_status.configure(text=f"STATUS: {self.current_status}")
-        self.lbl_eta.configure(text=self.eta_text)
+        self._safe_configure(self.lbl_speed, "text", f"Speed: {self.current_speed}")
+        self._safe_configure(self.lbl_queue, "text", f"Queue: {self.queue_manager.get_queue_size()}")
+        self._safe_configure(self.lbl_status, "text", f"STATUS: {self.current_status}")
+        self._safe_configure(self.lbl_eta, "text", self.eta_text)
 
         if time.time() - self.last_jelly_check > 10:
+            self.last_jelly_check = time.time()
+            threading.Thread(target=self.update_status_background, daemon=True).start()
+
+        self.after(1000, self.update_loop)
+
+
+    def update_status_background(self):
+        try:
             self.jellyfin_api.update_status()
             self.update_local_storage_status()
-            self.last_jelly_check = time.time()
-            if self.jelly_dashboard and self.jelly_dashboard.winfo_exists():
-                self.jelly_dashboard.refresh_ui()
+            
+            self.after(0, self._refresh_status_uis)
+        except Exception as e:
+            print(f"Background status update error: {e}")
 
-        self.after(250, self.update_loop)
+    def _refresh_status_uis(self):
+        if self.jelly_dashboard and self.jelly_dashboard.winfo_exists():
+            self.jelly_dashboard.refresh_ui()
+
+
 
     def start_process(self):
         try:
@@ -855,8 +827,10 @@ class VidSrcJellyfin(ctk.CTk):
 
             if self.failed_tasks and not self.stop_event.is_set():
                 self.log(
-                    f"RETRY: Attempting {len(self.failed_tasks)} failed episodes..."
+                    f"RETRY: Waiting for disk to settle before attempting {len(self.failed_tasks)} failed episodes..."
                 )
+                time.sleep(5)
+
                 for f_task in list(self.failed_tasks):
                     if self.stop_event.is_set():
                         break
@@ -887,7 +861,7 @@ class VidSrcJellyfin(ctk.CTk):
                         )
                         continue
 
-                    self.scraper.trigger_downloads(f, t, m, s, e, e, is_retry=True)
+                    self.scraper.trigger_downloads(f, t, m, s, e, e, is_retry=True, media_name=name)
                     self.wait_for_done(f)
                     self.clean_subtitles(f)
 
@@ -920,7 +894,6 @@ class VidSrcJellyfin(ctk.CTk):
                     pass
 
     def clear_finished_tasks_ui(self):
-        """Clears all tasks from UI at once."""
         for tid in list(self.active_tasks.keys()):
             self.active_tasks[tid]["row"].destroy()
         self.active_tasks = {}
@@ -946,12 +919,11 @@ class VidSrcJellyfin(ctk.CTk):
                     scroll, text=f"• {item}", anchor="w", font=("Consolas", 11)
                 ).pack(fill="x", pady=2)
 
-            ctk.CTkButton(win, text="CLOSE", command=win.destroy).pack(pady=15)
+            ctk.CTkButton(win, text="CLOSE", fg_color="#3498db", hover_color="#2980b9", command=win.destroy).pack(pady=15)
         except:
             pass
 
     def cleanup_empty_folders(self, folder_path):
-        """Deletes the folder if it contains no media files (.mp4, .mkv)."""
         try:
             if not os.path.exists(folder_path):
                 return False
@@ -1048,21 +1020,7 @@ class VidSrcJellyfin(ctk.CTk):
             import shutil
 
             usage = shutil.disk_usage(os.path.abspath(root))
-            free_gb = usage.free / (1024**3)
-            self.local_free_gb = free_gb
-            used_pct = usage.used / usage.total
-
-            def update_ui():
-                self.lbl_local_info.configure(text=f"Local: {free_gb:.1f} GB Free")
-                self.local_prog.set(used_pct)
-                if free_gb < 10:
-                    self.local_prog.configure(progress_color="#e74c3c")
-                elif free_gb < 30:
-                    self.local_prog.configure(progress_color="#f39c12")
-                else:
-                    self.local_prog.configure(progress_color="#2ecc71")
-
-            self.after(0, update_ui)
+            self.local_free_gb = usage.free / (1024**3)
         except:
             pass
 
@@ -1110,6 +1068,8 @@ class VidSrcJellyfin(ctk.CTk):
                     text="SELECT",
                     width=60,
                     height=24,
+                    fg_color="#3498db",
+                    hover_color="#2980b9",
                     command=lambda n=name, y=year, i=tid, p=p_path: self.select_title(
                         n, y, i, p
                     ),
@@ -1210,7 +1170,7 @@ class VidSrcJellyfin(ctk.CTk):
                 self.save_settings()
                 dialog.destroy()
 
-            ctk.CTkButton(btn_frame, text="History Only", command=remove_history).pack(
+            ctk.CTkButton(btn_frame, text="History Only", fg_color="#3498db", hover_color="#2980b9", command=remove_history).pack(
                 side="left", padx=10
             )
             ctk.CTkButton(
@@ -1246,7 +1206,7 @@ class VidSrcJellyfin(ctk.CTk):
                 win,
                 text="PENDING TASKS",
                 font=("Segoe UI", 16, "bold"),
-                text_color="#9b59b6",
+                text_color="#3498db",
             ).pack(pady=15)
 
             scroll = ctk.CTkScrollableFrame(win, width=550, height=350)
@@ -1271,24 +1231,65 @@ class VidSrcJellyfin(ctk.CTk):
                         row,
                         text=f"{task['name']} ({task['year']})",
                         anchor="w",
-                        width=350,
                         font=("Segoe UI", 12),
-                    ).pack(side="left", padx=15, pady=10)
+                    ).pack(side="left", padx=15, pady=10, expand=True, fill="x")
+
+                    btn_f = ctk.CTkFrame(row, fg_color="transparent")
+                    btn_f.pack(side="right", padx=10)
 
                     ctk.CTkButton(
-                        row,
+                        btn_f,
+                        text="🔝",
+                        width=30,
+                        height=28,
+                        fg_color="#3498db",
+                        hover_color="#2980b9",
+                        command=lambda i=idx: (
+                            self.queue_manager.move_to_top(i),
+                            refresh_list(),
+                        ),
+                    ).pack(side="left", padx=2)
+
+                    ctk.CTkButton(
+                        btn_f,
+                        text="▲",
+                        width=30,
+                        height=28,
+                        fg_color="#3498db",
+                        hover_color="#2980b9",
+                        command=lambda i=idx: (
+                            self.queue_manager.move_up(i),
+                            refresh_list(),
+                        ),
+                    ).pack(side="left", padx=2)
+
+                    ctk.CTkButton(
+                        btn_f,
+                        text="▼",
+                        width=30,
+                        height=28,
+                        fg_color="#3498db",
+                        hover_color="#2980b9",
+                        command=lambda i=idx: (
+                            self.queue_manager.move_down(i),
+                            refresh_list(),
+                        ),
+                    ).pack(side="left", padx=2)
+
+                    ctk.CTkButton(
+                        btn_f,
                         text="DELETE",
-                        width=70,
+                        width=60,
                         height=28,
                         fg_color="#e74c3c",
                         command=lambda i=idx: (
                             self.queue_manager.remove_from_queue(i),
                             refresh_list(),
                         ),
-                    ).pack(side="right", padx=10)
+                    ).pack(side="left", padx=(10, 2))
 
             refresh_list()
-            ctk.CTkButton(win, text="CLOSE", command=win.destroy).pack(pady=15)
+            ctk.CTkButton(win, text="CLOSE", fg_color="#3498db", hover_color="#2980b9", command=win.destroy).pack(pady=15)
         except Exception as e:
             self.log(f"ERROR opening queue window: {e}")
 
@@ -1391,6 +1392,7 @@ class VidSrcJellyfin(ctk.CTk):
             )
             scroll = ctk.CTkScrollableFrame(selector)
             scroll.pack(fill="both", expand=True, padx=10, pady=10)
+            
             checks = {}
             for s_num in sorted(self.season_data.keys()):
                 s_frame = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -1415,6 +1417,8 @@ class VidSrcJellyfin(ctk.CTk):
                         variable=var,
                         width=60,
                         text_color="#2ecc71" if is_dup else None,
+                        fg_color="#3498db",
+                        hover_color="#2980b9"
                     )
                     cb.grid(
                         row=(e_idx - 1) // 8, column=(e_idx - 1) % 8, padx=2, pady=2
@@ -1437,126 +1441,31 @@ class VidSrcJellyfin(ctk.CTk):
             ctk.CTkButton(
                 footer,
                 text="SELECT MISSING",
+                fg_color="#3498db",
+                hover_color="#2980b9",
                 command=lambda: [
                     v.set(e not in existing.get(s, []))
                     for s, eps in checks.items()
                     for e, v in eps.items()
                 ],
             ).pack(side="left", padx=10)
-            ctk.CTkButton(footer, text="SAVE", command=save_selection).pack(
+            ctk.CTkButton(footer, text="SAVE", fg_color="#3498db", hover_color="#2980b9", command=save_selection).pack(
                 side="right", padx=20
             )
         except:
             pass
 
     def open_settings(self):
-        try:
-            settings = ctk.CTkToplevel(self)
-            settings.title("Settings")
-            settings.geometry("500x650")
-            settings.attributes("-topmost", True)
-            scroll = ctk.CTkScrollableFrame(settings)
-            scroll.pack(fill="both", expand=True, padx=10, pady=10)
-            ctk.CTkLabel(
-                scroll, text="TMDB API KEY", font=("Segoe UI", 12, "bold")
-            ).pack(pady=(10, 5), padx=20, anchor="w")
-            api_entry = ctk.CTkEntry(scroll, width=400, show="*")
-            api_entry.pack(pady=5, padx=20)
-            api_entry.insert(0, self.tmdb_api_key)
+        if self.settings_window is None or not self.settings_window.winfo_exists():
+            self.settings_window = SettingsWindow(self)
+        else:
+            self.settings_window.focus()
 
-            ctk.CTkLabel(
-                scroll, text="DISCORD WEBHOOK", font=("Segoe UI", 12, "bold")
-            ).pack(pady=(20, 5), padx=20, anchor="w")
-            discord_entry = ctk.CTkEntry(
-                scroll,
-                width=400,
-                placeholder_text="https://discord.com/api/webhooks/...",
-            )
-            discord_entry.pack(pady=5, padx=20)
-            discord_entry.insert(0, self.discord_webhook)
-
-            self.jellyfin_settings_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-            if self.show_jellyfin_var.get():
-                self.jellyfin_settings_frame.pack(fill="x")
-
-            ctk.CTkLabel(
-                self.jellyfin_settings_frame,
-                text="JELLYFIN INTEGRATION",
-                font=("Segoe UI", 12, "bold"),
-            ).pack(pady=(20, 5), padx=20, anchor="w")
-            j_url = ctk.CTkEntry(
-                self.jellyfin_settings_frame, width=400, placeholder_text="Server URL"
-            )
-            j_url.pack(pady=5, padx=20)
-            j_url.insert(0, self.jellyfin_url)
-            j_key = ctk.CTkEntry(
-                self.jellyfin_settings_frame,
-                width=400,
-                show="*",
-                placeholder_text="API Key",
-            )
-            j_key.pack(pady=5, padx=20)
-            j_key.insert(0, self.jellyfin_api_key)
-
-            ctk.CTkLabel(scroll, text="APPEARANCE", font=("Segoe UI", 12, "bold")).pack(
-                pady=(20, 5), padx=20, anchor="w"
-            )
-            ctk.CTkLabel(scroll, text="Theme:").pack(padx=20, anchor="w")
-            theme_var = ctk.StringVar(value=ctk.get_appearance_mode())
-            ctk.CTkOptionMenu(
-                scroll,
-                values=["Dark", "Light", "System"],
-                variable=theme_var,
-                command=lambda v: ctk.set_appearance_mode(v),
-            ).pack(pady=5, padx=20, fill="x")
-
-            ctk.CTkLabel(scroll, text="Accent Color:").pack(padx=20, anchor="w")
-            accent_var = ctk.StringVar(value=self.current_accent)
-            ctk.CTkOptionMenu(
-                scroll,
-                values=["Blue", "Purple", "Emerald", "Amber"],
-                variable=accent_var,
-                command=self.change_accent,
-            ).pack(pady=5, padx=20, fill="x")
-
-            ctk.CTkLabel(
-                scroll, text="DEFAULT QUALITY", font=("Segoe UI", 12, "bold")
-            ).pack(pady=(20, 5), padx=20, anchor="w")
-            quality_menu = ctk.CTkOptionMenu(
-                scroll, values=["1080p", "720p", "480p"], variable=self.quality_var
-            )
-            quality_menu.pack(pady=5, padx=20, fill="x")
-
-            ctk.CTkLabel(
-                scroll, text="POST-DOWNLOAD", font=("Segoe UI", 12, "bold")
-            ).pack(pady=(20, 5), padx=20, anchor="w")
-            ctk.CTkSwitch(
-                scroll, text="Open folder after download", variable=self.open_folder_var
-            ).pack(pady=5, padx=20, anchor="w")
-
-            ctk.CTkLabel(
-                scroll, text="INTEGRATIONS", font=("Segoe UI", 12, "bold")
-            ).pack(pady=(20, 5), padx=20, anchor="w")
-            ctk.CTkSwitch(
-                scroll,
-                text="Show Jellyfin features",
-                variable=self.show_jellyfin_var,
-                command=self.toggle_jellyfin_ui,
-            ).pack(pady=5, padx=20, anchor="w")
-
-            def save():
-                self.tmdb_api_key = api_entry.get()
-                self.discord_webhook = discord_entry.get().strip()
-                self.jellyfin_url = j_url.get().strip().rstrip("/")
-                self.jellyfin_api_key = j_key.get().strip()
-                self.save_settings()
-                settings.destroy()
-
-            ctk.CTkButton(
-                settings, text="SAVE SETTINGS", fg_color="#2ecc71", command=save
-            ).pack(pady=20)
-        except:
-            pass
+    def open_rpc_settings(self):
+        if self.rpc_settings_window is None or not self.rpc_settings_window.winfo_exists():
+            self.rpc_settings_window = RPCSettingsWindow(self)
+        else:
+            self.rpc_settings_window.focus()
 
     def load_settings(self):
         if os.path.exists(self.config_file):
@@ -1570,11 +1479,16 @@ class VidSrcJellyfin(ctk.CTk):
                     self.discord_webhook = s.get("discord_webhook", "")
                     self.jellyfin_url = s.get("jellyfin_url", "")
                     self.jellyfin_api_key = s.get("jellyfin_api_key", "")
-                    self.change_accent(s.get("accent", "Blue"))
+                    self.current_accent = "Blue" # Force blue
                     self.quality_var.set(s.get("quality", "1080p"))
                     self.video_only_var.set(s.get("video_only", False))
                     self.open_folder_var.set(s.get("open_folder", True))
                     self.show_jellyfin_var.set(s.get("show_jellyfin", True))
+                    self.rpc_enabled = s.get("rpc_enabled", False)
+                    self.rpc_client_id = s.get("rpc_client_id", "")
+                    self.rpc_target_user = s.get("rpc_target_user", "")
+                    self.rpc_show_time = s.get("rpc_show_time", True)
+                    self.rpc_show_server = s.get("rpc_show_server", True)
                     self.toggle_jellyfin_ui()
                     self.render_history()
             except:
@@ -1587,7 +1501,6 @@ class VidSrcJellyfin(ctk.CTk):
                 "show_path": self.show_path,
                 "movie_path": self.movie_path,
                 "history": self.history,
-                "accent": self.current_accent,
                 "quality": self.quality_var.get(),
                 "discord_webhook": self.discord_webhook,
                 "jellyfin_url": self.jellyfin_url,
@@ -1595,6 +1508,11 @@ class VidSrcJellyfin(ctk.CTk):
                 "video_only": self.video_only_var.get(),
                 "open_folder": self.open_folder_var.get(),
                 "show_jellyfin": self.show_jellyfin_var.get(),
+                "rpc_enabled": self.rpc_enabled,
+                "rpc_client_id": self.rpc_client_id,
+                "rpc_target_user": self.rpc_target_user,
+                "rpc_show_time": self.rpc_show_time,
+                "rpc_show_server": self.rpc_show_server,
             }
             with open(self.config_file, "w") as f:
                 json.dump(data, f)

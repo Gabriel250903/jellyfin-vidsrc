@@ -2,6 +2,7 @@ import os
 import requests
 import io
 import threading
+import time
 from PIL import Image
 import customtkinter as ctk
 from core.utils import sanitize_path
@@ -10,6 +11,29 @@ from core.utils import sanitize_path
 class TMDBAPI:
     def __init__(self, app):
         self.app = app
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            }
+        )
+
+    def _get(self, url, retries=3, timeout=10):
+        for i in range(retries):
+            try:
+                res = self.session.get(url, timeout=timeout)
+                res.raise_for_status()
+                return res
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+            ) as e:
+                if i == retries - 1:
+                    raise e
+                time.sleep(1)
+            except Exception as e:
+                raise e
+        return None
 
     def perform_search(self, query, year=None):
         key = self.app.tmdb_api_key
@@ -37,7 +61,7 @@ class TMDBAPI:
         try:
             key = self.app.tmdb_api_key
             url = f"https://api.themoviedb.org/3/{cat}/{tid}?api_key={key}"
-            res = requests.get(url).json()
+            res = self._get(url).json()
 
             if "status_code" in res and res.get("status_code") != 1:
                 alt_cat = "movie" if cat == "tv" else "tv"
@@ -45,7 +69,7 @@ class TMDBAPI:
                     f"UI: ID {tid} not found in {cat.upper()}, trying {alt_cat.upper()}..."
                 )
                 url = f"https://api.themoviedb.org/3/{alt_cat}/{tid}?api_key={key}"
-                res_alt = requests.get(url).json()
+                res_alt = self._get(url).json()
 
                 if "status_code" in res_alt and res_alt.get("status_code") != 1:
                     self.app.log(
@@ -78,7 +102,7 @@ class TMDBAPI:
                 else:
                     url += f"&first_air_date_year={year}"
 
-            res = requests.get(url).json()
+            res = self._get(url).json()
             if "status_code" in res:
                 self.app.log(
                     f"TMDB ERROR: {res.get('status_message', 'Invalid API Key')}"
@@ -110,9 +134,10 @@ class TMDBAPI:
     def fetch_seasons(self, tid):
         try:
             self.app.log(f"API: Fetching season data for TID {tid}...")
-            d = requests.get(
+            url = (
                 f"https://api.themoviedb.org/3/tv/{tid}?api_key={self.app.tmdb_api_key}"
-            ).json()
+            )
+            d = self._get(url).json()
             self.app.season_data = {
                 s["season_number"]: s["episode_count"]
                 for s in d["seasons"]
@@ -133,7 +158,8 @@ class TMDBAPI:
 
     def load_poster(self, p):
         try:
-            r = requests.get(f"https://image.tmdb.org/t/p/w300{p}", timeout=10)
+            url = f"https://image.tmdb.org/t/p/w300{p}"
+            r = self._get(url, timeout=15)
             img = Image.open(io.BytesIO(r.content))
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(220, 300))
             self.app.after(
@@ -150,7 +176,7 @@ class TMDBAPI:
             key = self.app.tmdb_api_key
             cat = "tv" if mode == "TV Show" else "movie"
             url = f"https://api.themoviedb.org/3/{cat}/{tid}?api_key={key}"
-            d = requests.get(url).json()
+            d = self._get(url).json()
 
             meta = {
                 "tag": "tvshow" if mode == "TV Show" else "movie",
@@ -174,7 +200,8 @@ class TMDBAPI:
 
             p_path = d.get("poster_path")
             if p_path:
-                r = requests.get(f"https://image.tmdb.org/t/p/original{p_path}")
+                url_poster = f"https://image.tmdb.org/t/p/original{p_path}"
+                r = self._get(url_poster)
                 with open(os.path.join(folder, "poster.jpg"), "wb") as f:
                     f.write(r.content)
         except:

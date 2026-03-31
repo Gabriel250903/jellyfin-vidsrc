@@ -17,6 +17,10 @@ jellyfin_config.json
 *.log
 error.log
 output.log
+missing_episodes.txt
+dist/
+VidSrcJellyfin.spec
+build/
 
 # OS generated files
 .DS_Store
