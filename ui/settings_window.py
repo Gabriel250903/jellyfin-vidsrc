@@ -1,7 +1,4 @@
 import customtkinter as ctk
-import json
-import os
-import threading
 
 
 class SettingsWindow(ctk.CTkToplevel):
@@ -18,16 +15,12 @@ class SettingsWindow(ctk.CTkToplevel):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self._is_resizing = False
-        self._resize_timer = None
-
         self.setup_ui()
-        self.bind("<Configure>", self._on_configure)
 
     def setup_ui(self):
         for child in self.winfo_children():
-            child.grid_forget()
-            child.pack_forget()
+            getattr(child, "grid_forget", lambda: None)()
+            getattr(child, "pack_forget", lambda: None)()
 
         self.scroll = ctk.CTkScrollableFrame(self, corner_radius=0, border_width=0)
         self.scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
@@ -105,7 +98,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(
             self.scroll, text="APPEARANCE", font=("Segoe UI", 12, "bold")
         ).pack(pady=(20, 5), padx=20, anchor="w")
-        
+
         ctk.CTkLabel(self.scroll, text="Theme:").pack(padx=20, anchor="w")
         theme_var = ctk.StringVar(value=ctk.get_appearance_mode())
         ctk.CTkOptionMenu(
@@ -124,6 +117,17 @@ class SettingsWindow(ctk.CTkToplevel):
             self.scroll,
             values=["1080p", "720p", "480p"],
             variable=self.parent.quality_var,
+            fg_color="#3498db",
+            button_color="#3498db",
+        ).pack(pady=5, padx=20, fill="x")
+
+        ctk.CTkLabel(self.scroll, text="BROWSER", font=("Segoe UI", 12, "bold")).pack(
+            pady=(20, 5), padx=20, anchor="w"
+        )
+        ctk.CTkOptionMenu(
+            self.scroll,
+            values=["Edge", "Chrome", "Firefox"],
+            variable=self.parent.browser_var,
             fg_color="#3498db",
             button_color="#3498db",
         ).pack(pady=5, padx=20, fill="x")
@@ -155,27 +159,11 @@ class SettingsWindow(ctk.CTkToplevel):
         )
         self.btn_save.grid(row=1, column=0, sticky="ew", padx=20, pady=20)
 
-    def _on_configure(self, event):
-        if event.widget == self:
-            if not self._is_resizing:
-                self._is_resizing = True
-                self.scroll.grid_remove()
-                self.btn_save.grid_remove()
-
-            if self._resize_timer:
-                self.after_cancel(self._resize_timer)
-            self._resize_timer = self.after(300, self._stop_resize_flag)
-
-    def _stop_resize_flag(self):
-        self._is_resizing = False
-        self._resize_timer = None
-        self.scroll.grid()
-        self.btn_save.grid()
-
     def save(self):
         self.parent.tmdb_api_key = self.api_entry.get()
         self.parent.discord_webhook = self.discord_entry.get().strip()
         self.parent.jellyfin_url = self.j_url.get().strip().rstrip("/")
         self.parent.jellyfin_api_key = self.j_key.get().strip()
+
         self.parent.save_settings()
         self.destroy()

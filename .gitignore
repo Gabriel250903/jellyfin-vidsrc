@@ -15,12 +15,10 @@ venv.bak/
 # Project specific
 jellyfin_config.json
 *.log
-error.log
-output.log
-missing_episodes.txt
+verify_episodes.py
 dist/
-VidSrcJellyfin.spec
 build/
+cache/
 
 # OS generated files
 .DS_Store

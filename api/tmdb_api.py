@@ -1,98 +1,177 @@
 import os
-import requests
+import aiohttp
+import asyncio
 import io
-import threading
-import time
-from PIL import Image
+import functools
+from PIL import Image, ImageOps
 import customtkinter as ctk
 from core.utils import sanitize_path
+from core.event_system import events
 
 
 class TMDBAPI:
-    def __init__(self, app):
-        self.app = app
-        self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-            }
-        )
+    def __init__(self, config_provider=None):
+        self.config_provider = config_provider
+        self._session = None
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        }
 
-    def _get(self, url, retries=3, timeout=10):
+    @functools.lru_cache(maxsize=100)
+    def _get_cached_image(self, cache_path):
+        try:
+            return Image.open(cache_path).copy()
+        except Exception:
+            return None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(headers=self.headers)
+        return self._session
+
+    async def close(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
+
+    def _get_api_key(self):
+        if self.config_provider:
+            if hasattr(self.config_provider, "tmdb_api_key"):
+                return str(getattr(self.config_provider, "tmdb_api_key") or "")
+            if isinstance(self.config_provider, dict):
+                return str(self.config_provider.get("api_key") or "")
+        return ""
+
+    def _get_mode(self):
+        if self.config_provider:
+            if hasattr(self.config_provider, "mode_switch"):
+                return (
+                    "tv"
+                    if getattr(self.config_provider, "mode_switch").get() == "TV Show"
+                    else "movie"
+                )
+            if isinstance(self.config_provider, dict):
+                return (
+                    "tv" if self.config_provider.get("mode") == "TV Show" else "movie"
+                )
+        return "tv"
+
+    async def _get(self, url, retries=3, timeout=10):
+        last_err = Exception("Unknown TMDB error")
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
         for i in range(retries):
             try:
-                res = self.session.get(url, timeout=timeout)
-                res.raise_for_status()
-                return res
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-            ) as e:
-                if i == retries - 1:
-                    raise e
-                time.sleep(1)
+                async with aiohttp.ClientSession(
+                    headers=self.headers, trust_env=False
+                ) as session:
+                    async with session.get(url, timeout=client_timeout) as res:
+                        res.raise_for_status()
+                        return await res.json()
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                last_err = e
+                if i < retries - 1:
+                    await asyncio.sleep(1)
             except Exception as e:
+                events.emit("log", f"TMDB GET CRITICAL ERROR: {e}")
                 raise e
-        return None
+        raise last_err
 
-    def perform_search(self, query, year=None):
-        key = self.app.tmdb_api_key
+    async def _get_raw(self, url, retries=3, timeout=10):
+        last_err = Exception("Unknown TMDB error")
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+        for i in range(retries):
+            try:
+                async with aiohttp.ClientSession(
+                    headers=self.headers, trust_env=False
+                ) as session:
+                    async with session.get(url, timeout=client_timeout) as res:
+                        res.raise_for_status()
+                        return await res.read()
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                last_err = e
+                if i < retries - 1:
+                    await asyncio.sleep(1)
+            except Exception as e:
+                events.emit("log", f"TMDB RAW GET CRITICAL ERROR: {e}")
+                raise e
+        raise last_err
+
+    async def preload_posters(self, results, size=(160, 240)):
+        tasks = []
+        for item in results:
+            p_path = item.get("poster_path")
+            if p_path:
+                tasks.append(self.get_poster_image(p_path, size=size))
+            else:
+
+                async def _none():
+                    return None
+
+                tasks.append(_none())
+        return await asyncio.gather(*tasks)
+
+    async def perform_search(self, query, year=None):
+        key = self._get_api_key()
         if not key or not query:
-            self.app.log("ERROR: API Key or Search Query is missing.")
+            events.emit("log", "ERROR: API Key or Search Query is missing.")
             return
 
-        cat = "tv" if self.app.mode_switch.get() == "TV Show" else "movie"
+        events.emit("search_started")
+        cat = self._get_mode()
 
         if query.isdigit() and not year:
-            self.app.log(f"UI: Fetching TMDB ID {query}...")
-            threading.Thread(
-                target=lambda: self.fetch_by_id(query, cat), daemon=True
-            ).start()
+            events.emit("log", f"UI: Fetching TMDB ID {query}...")
+            await self.fetch_by_id(query, cat)
         else:
             search_msg = f"'{query}'"
             if year:
                 search_msg += f" ({year})"
-            self.app.log(f"UI: Searching TMDB for {search_msg}...")
-            threading.Thread(
-                target=lambda: self.bg_search(query, cat, year), daemon=True
-            ).start()
+            events.emit("log", f"UI: Searching TMDB for {search_msg}...")
+            await self.bg_search(query, cat, year)
 
-    def fetch_by_id(self, tid, cat):
+    async def fetch_by_id(self, tid, cat):
         try:
-            key = self.app.tmdb_api_key
+            key = self._get_api_key()
             url = f"https://api.themoviedb.org/3/{cat}/{tid}?api_key={key}"
-            res = self._get(url).json()
+            res = await self._get(url)
 
             if "status_code" in res and res.get("status_code") != 1:
                 alt_cat = "movie" if cat == "tv" else "tv"
-                self.app.log(
-                    f"UI: ID {tid} not found in {cat.upper()}, trying {alt_cat.upper()}..."
+                events.emit(
+                    "log",
+                    f"UI: ID {tid} not found in {cat.upper()}, trying {alt_cat.upper()}...",
                 )
                 url = f"https://api.themoviedb.org/3/{alt_cat}/{tid}?api_key={key}"
-                res_alt = self._get(url).json()
-
-                if "status_code" in res_alt and res_alt.get("status_code") != 1:
-                    self.app.log(
-                        f"TMDB ERROR: ID {tid} not found in Movies or TV Shows."
+                try:
+                    res_alt = await self._get(url)
+                    if "status_code" in res_alt and res_alt.get("status_code") != 1:
+                        events.emit(
+                            "log",
+                            f"TMDB ERROR: ID {tid} not found in Movies or TV Shows.",
+                        )
+                        events.emit("results_rendered", [], cat, [])
+                        return
+                    res = res_alt
+                    cat = alt_cat
+                    events.emit(
+                        "mode_change_request", "Movie" if cat == "movie" else "TV Show"
                     )
+                except Exception:
+                    events.emit(
+                        "log", f"TMDB ERROR: ID {tid} not found in Movies or TV Shows."
+                    )
+                    events.emit("results_rendered", [], cat, [])
                     return
 
-                res = res_alt
-                cat = alt_cat
-                self.app.after(
-                    0,
-                    lambda: self.app.mode_switch.set(
-                        "Movie" if cat == "movie" else "TV Show"
-                    ),
-                )
-
-            self.app.after(0, lambda: self.app.render_results([res], cat))
+            results = [res]
+            posters = await self.preload_posters(results)
+            events.emit("results_rendered", results, cat, posters)
         except Exception as e:
-            self.app.log(f"ERROR fetching ID from TMDB: {e}")
+            events.emit("log", f"ERROR fetching ID from TMDB: {e}")
+            events.emit("results_rendered", [], cat, [])
 
-    def bg_search(self, query, cat, year=None, is_fallback=False):
+    async def bg_search(self, query, cat, year=None, is_fallback=False):
         try:
-            key = self.app.tmdb_api_key
+            key = self._get_api_key()
             url = (
                 f"https://api.themoviedb.org/3/search/{cat}?api_key={key}&query={query}"
             )
@@ -102,81 +181,130 @@ class TMDBAPI:
                 else:
                     url += f"&first_air_date_year={year}"
 
-            res = self._get(url).json()
+            res = await self._get(url)
             if "status_code" in res:
-                self.app.log(
-                    f"TMDB ERROR: {res.get('status_message', 'Invalid API Key')}"
+                events.emit(
+                    "log", f"TMDB ERROR: {res.get('status_message', 'Invalid API Key')}"
                 )
+                events.emit("results_rendered", [], cat, [])
                 return
 
             results = res.get("results", [])
 
             if not results and not is_fallback:
                 alt_cat = "movie" if cat == "tv" else "tv"
-                self.app.log(
-                    f"UI: No {cat.upper()} results for '{query}', trying {alt_cat.upper()}..."
+                events.emit(
+                    "log",
+                    f"UI: No {cat.upper()} results for '{query}', trying {alt_cat.upper()}...",
                 )
-                self.bg_search(query, alt_cat, year, is_fallback=True)
+                await self.bg_search(query, alt_cat, year, is_fallback=True)
                 return
 
             if results and is_fallback:
-                self.app.after(
-                    0,
-                    lambda: self.app.mode_switch.set(
-                        "Movie" if cat == "movie" else "TV Show"
-                    ),
+                events.emit(
+                    "mode_change_request", "Movie" if cat == "movie" else "TV Show"
                 )
 
-            self.app.after(0, lambda: self.app.render_results(results, cat))
+            limited_results = results[:20]
+            posters = await self.preload_posters(limited_results)
+            events.emit("results_rendered", limited_results, cat, posters)
         except Exception as e:
-            self.app.log(f"ERROR fetching from TMDB: {e}")
+            events.emit("log", f"ERROR fetching from TMDB: {e}")
+            events.emit("results_rendered", [], cat, [])
 
-    def fetch_seasons(self, tid):
+    async def fetch_seasons(self, tid):
         try:
-            self.app.log(f"API: Fetching season data for TID {tid}...")
-            url = (
-                f"https://api.themoviedb.org/3/tv/{tid}?api_key={self.app.tmdb_api_key}"
-            )
-            d = self._get(url).json()
-            self.app.season_data = {
+            events.emit("log", f"API: Fetching season data for TID {tid}...")
+            url = f"https://api.themoviedb.org/3/tv/{tid}?api_key={self._get_api_key()}"
+            d = await self._get(url)
+            season_data = {
                 s["season_number"]: s["episode_count"]
-                for s in d["seasons"]
-                if s["season_number"] > 0
+                for s in d.get("seasons", [])
+                if s.get("season_number", 0) > 0
             }
-            if self.app.season_data:
-                max_s = max(self.app.season_data.keys())
-                self.app.after(
-                    0,
-                    lambda: (
-                        self.app.end_season.delete(0, "end"),
-                        self.app.end_season.insert(0, str(max_s)),
-                    ),
-                )
-            self.app.log(f"API: Found {len(self.app.season_data)} seasons.")
+            events.emit("season_data_loaded", season_data)
+            events.emit("log", f"API: Found {len(season_data)} seasons.")
         except Exception as e:
-            self.app.log(f"ERROR fetching seasons: {e}")
+            events.emit("log", f"ERROR fetching seasons: {e}")
 
-    def load_poster(self, p):
+    async def load_poster(self, p):
         try:
-            url = f"https://image.tmdb.org/t/p/w300{p}"
-            r = self._get(url, timeout=15)
-            img = Image.open(io.BytesIO(r.content))
-            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(220, 300))
-            self.app.after(
-                0,
-                lambda: self.app.poster_label.configure(
-                    image=ctk_img, text="", fg_color="transparent"
-                ),
+            cache_dir = "cache/posters"
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
+
+            cache_path = os.path.join(cache_dir, p.lstrip("/"))
+            if os.path.exists(cache_path):
+                img = self._get_cached_image(cache_path)
+            else:
+                url = f"https://image.tmdb.org/t/p/w300{p}"
+                img_data = await self._get_raw(url, timeout=15)
+                with open(cache_path, "wb") as f:
+                    f.write(img_data)
+                img = Image.open(io.BytesIO(img_data))
+
+            return img
+        except Exception as e:
+            events.emit("log", f"ERROR loading poster: {e}")
+            return None
+
+    async def fetch_trending(self, cat="movie", page=1):
+        try:
+            key = self._get_api_key()
+            url = f"https://api.themoviedb.org/3/trending/{cat}/day?api_key={key}&page={page}"
+            res = await self._get(url)
+            results = res.get("results", [])
+            posters = await self.preload_posters(results)
+            return results, posters, res.get("total_pages", 1)
+        except Exception as e:
+            events.emit("log", f"ERROR fetching trending: {e}")
+            return [], [], 0
+
+    async def fetch_popular(self, cat="movie", page=1):
+        try:
+            key = self._get_api_key()
+            url = (
+                f"https://api.themoviedb.org/3/{cat}/popular?api_key={key}&page={page}"
             )
+            res = await self._get(url)
+            results = res.get("results", [])
+            posters = await self.preload_posters(results)
+            return results, posters, res.get("total_pages", 1)
         except Exception as e:
-            self.app.log(f"ERROR loading poster: {e}")
+            events.emit("log", f"ERROR fetching popular: {e}")
+            return [], [], 0
 
-    def download_metadata(self, name, year, tid, mode, folder):
+    async def get_poster_image(self, p_path, size=(100, 150)):
+        if not p_path:
+            return None
         try:
-            key = self.app.tmdb_api_key
+            cache_dir = "cache/posters"
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
+
+            cache_path = os.path.join(cache_dir, p_path.lstrip("/"))
+            if os.path.exists(cache_path):
+                img = self._get_cached_image(cache_path)
+            else:
+                url = f"https://image.tmdb.org/t/p/w185{p_path}"
+                img_data = await self._get_raw(url, timeout=15)
+                with open(cache_path, "wb") as f:
+                    f.write(img_data)
+                img = Image.open(io.BytesIO(img_data))
+
+            if img:
+                img = ImageOps.fit(img, size, Image.Resampling.LANCZOS)
+            return img
+        except Exception as e:
+            events.emit("log", f"ERROR getting poster thumbnail: {e}")
+            return None
+
+    async def download_metadata(self, name, year, tid, mode, folder):
+        try:
+            key = self._get_api_key()
             cat = "tv" if mode == "TV Show" else "movie"
             url = f"https://api.themoviedb.org/3/{cat}/{tid}?api_key={key}"
-            d = self._get(url).json()
+            d = await self._get(url)
 
             meta = {
                 "tag": "tvshow" if mode == "TV Show" else "movie",
@@ -200,12 +328,74 @@ class TMDBAPI:
 
             p_path = d.get("poster_path")
             if p_path:
-                url_poster = f"https://image.tmdb.org/t/p/original{p_path}"
-                r = self._get(url_poster)
-                with open(os.path.join(folder, "poster.jpg"), "wb") as f:
-                    f.write(r.content)
-        except:
-            pass
+                try:
+                    url_poster = f"https://image.tmdb.org/t/p/original{p_path}"
+                    img_data = await self._get_raw(url_poster)
+                    if mode == "TV Show":
+                        with open(os.path.join(folder, "poster.jpg"), "wb") as f:
+                            f.write(img_data)
+                    else:
+                        with open(
+                            os.path.join(
+                                folder, f"{sanitize_path(name)} ({year})-poster.jpg"
+                            ),
+                            "wb",
+                        ) as f:
+                            f.write(img_data)
+                except Exception as e:
+                    events.emit("log", f"ERROR saving metadata poster: {e}")
+
+            if mode == "TV Show":
+                try:
+                    seasons = d.get("seasons", [])
+                    for s in seasons:
+                        s_num = s.get("season_number")
+                        if s_num is None or s_num == 0:
+                            continue
+
+                        s_url = f"https://api.themoviedb.org/3/tv/{tid}/season/{s_num}?api_key={key}"
+                        s_data = await self._get(s_url)
+
+                        season_folder = os.path.join(folder, f"Season {s_num}")
+                        if not os.path.exists(season_folder):
+                            os.makedirs(season_folder, exist_ok=True)
+
+                        s_poster = s_data.get("poster_path")
+                        if s_poster:
+                            try:
+                                s_poster_url = (
+                                    f"https://image.tmdb.org/t/p/original{s_poster}"
+                                )
+                                s_img_data = await self._get_raw(s_poster_url)
+                                with open(
+                                    os.path.join(season_folder, "folder.jpg"), "wb"
+                                ) as f:
+                                    f.write(s_img_data)
+                            except:
+                                pass
+
+                        for ep in s_data.get("episodes", []):
+                            ep_num = ep.get("episode_number")
+                            if ep_num is None:
+                                continue
+
+                            ep_meta = {
+                                "tag": "episodedetails",
+                                "title": ep.get("name", f"Episode {ep_num}"),
+                                "season": s_num,
+                                "episode": ep_num,
+                                "plot": ep.get("overview", ""),
+                                "rating": ep.get("vote_average", ""),
+                                "tmdb_id": ep.get("id", ""),
+                            }
+
+                            ep_nfo_name = f"{sanitize_path(name)} S{str(s_num).zfill(2)}E{str(ep_num).zfill(2)}.nfo"
+                            self.write_nfo(season_folder, ep_nfo_name, ep_meta)
+                except Exception as e:
+                    events.emit("log", f"ERROR generating episode NFOs: {e}")
+
+        except Exception as e:
+            events.emit("log", f"ERROR downloading metadata: {e}")
 
     def write_nfo(self, folder, filename, data):
         try:
@@ -225,5 +415,5 @@ class TMDBAPI:
                 f.write(f"  <genre>{data.get('genre', '')}</genre>\n")
                 f.write(f"  <rating>{data.get('rating', '')}</rating>\n")
                 f.write(f"</{data['tag']}>\n")
-        except:
-            pass
+        except OSError as e:
+            events.emit("log", f"ERROR writing NFO file: {e}")

@@ -10,9 +10,7 @@ VidSrc Jellyfin is a sophisticated, all-in-one automation tool that scrapes medi
 
 ### 1. Prerequisites
 *   **Python:** 3.14 or higher installed.
-*   **Browser:** [Microsoft Edge](https://www.microsoft.com/edge) (The app currently uses Edge for headless scraping).
-
-*Note: More selenium drivers (Chrome, Firefox) support coming soon!*
+*   **Browser:** [Microsoft Edge](https://www.microsoft.com/edge), [Google Chrome](https://www.google.com/chrome/), or [Mozilla Firefox](https://www.mozilla.org/firefox/) (The app supports these browsers for headless scraping, selectable in Settings).
 
 ### 2. Installation
 1.  **Clone the Repo:**
@@ -63,17 +61,17 @@ Connecting Jellyfin allows the app to trigger library scans and monitor your ser
     *   Your URL should look like `http://192.168.1.100:8096`.
 6.  Enable **"Show Jellyfin features"** to unlock the Live Dashboard and RPC tracking.
 
-### 💬 Setting up Discord Notifications (Optional)
+### 💬 Setting up Notifications (Optional)
 Want to know when your show is ready while you're away?
-1.  In your Discord server, go to **Server Settings > Integrations > Webhooks**.
-2.  Create a **New Webhook**, name it, and copy the **Webhook URL**.
-3.  Paste it into the **DISCORD WEBHOOK** field in the settings.
+1.  **Discord:** In your Discord server, go to **Server Settings > Integrations > Webhooks**, create a **New Webhook**, and paste the URL into the app settings.
+2.  **Windows Toasts:** The app uses `win11toast` to send native Windows 11 notifications when a download finishes or a critical error occurs.
 
 ### 📁 Setting up Media Storage
 The app is designed to keep your library perfectly organized for Jellyfin without any manual folder creation.
 1.  In the app, click the **Folder Icon** ("Library Path") to select your main media directory (e.g., `C:\Jellyfin`).
-2.  **Automatic Organization:** Once you select a root folder, the app will automatically create two subfolders: `/Movies` and `/Shows`. 
-3.  **Smart Routing:** When you download a movie, it goes to `/Movies`. When you download a series, it goes to `/Shows`, complete with season subfolders and metadata. 
+2.  **Lazy Folder Creation:** The app will not create any folders immediately.
+3.  **Automatic Organization:** When you actually start a download, the app will automatically create the necessary subfolders: `/Movies` or `/Shows`, including season subfolders and metadata.
+4.  **Smart Routing:** When you download a movie, it goes to `/Movies`. When you download a series, it goes to `/Shows`, complete with season subfolders and metadata. 
 
 ### 🎬 Setting Default Quality
 You can control the resolution of your downloads to save space or ensure the highest fidelity.
@@ -87,7 +85,7 @@ You can control the resolution of your downloads to save space or ensure the hig
 ### Step 1: Search and Select
 *   Toggle between **TV Show** and **Movie** mode in the sidebar.
 *   Type your query in the search bar. You can search by name or even by **TMDB ID**.
-*   Click **SELECT** on the correct result.
+*   Click **SELECT** on the correct result. **Auto-Switch Mode:** If you click a movie from your history while in "TV Show" mode, the app will automatically switch modes for you.
 
 ### Step 2: Add to Queue
 *   **Configure the Batch:** 
@@ -95,20 +93,20 @@ You can control the resolution of your downloads to save space or ensure the hig
 *   **Run:** Click the green **START PROCESS** button. This will automatically add the media to the background queue manager.
 
 ### Step 3: Manage the Queue
-*   **Pending Queue:** Click the **⏳ PENDING QUEUE** button in the sidebar to see all currently waiting tasks.
-*   **Delete Tasks:** Inside the queue window, you can remove or reorder tasks.
+*   **Parallel Processing:** The app supports multiple worker threads (default: 2), allowing you to download multiple movies or shows simultaneously.
+*   **Pending Queue Window:** Click the **⏳ PENDING QUEUE** button to see both **ACTIVE** tasks currently downloading and **PENDING** tasks waiting in line. You can reorder or delete pending tasks.
 
 ### Step 4: Automation in Action
 Once a task reaches the front of the queue, the app takes over:
-1.  **Scraping:** It launches a headless browser to find the best links.
-2.  **Downloading:** Files are sent to your target folder.
-3.  **Renaming:** The built-in **Watchdog** detects finished downloads and renames them professionally.
-4.  **Metadata:** It writes `.nfo` files and saves `poster.jpg`.
-5.  **Finalizing:** If connected, it tells Jellyfin to scan the folder and sends a Discord notification.
+1.  **Headless Scraper:** It launches a persistent headless browser instance. For Chrome/Edge, it uses **CDP Dynamic Routing** to update download paths without restarting the browser.
+2.  **Downloading:** Files are sent to your target folder. Real-time progress is mapped directly from the browser's download engine.
+3.  **Renaming:** The built-in **Task-Isolated Watchdog** detects finished downloads and renames them professionally (e.g., `Show Name (2024) S01 E01.mp4`).
+4.  **Metadata:** It writes advanced `.nfo` files for movies, shows, and individual episodes, and saves season posters as `folder.jpg`.
+5.  **Finalizing:** If connected, it tells Jellyfin to scan the folder, sends a Discord notification, and triggers a Windows Toast.
 
 ---
 
-## 📦 Standalone Bundling (.exe)
+## 📦 Standalone Bundling (.exe) & Updates
 
 You can bundle the entire application into a single, portable Windows executable:
 
@@ -120,34 +118,24 @@ You can bundle the entire application into a single, portable Windows executable
     ```bash
     pyinstaller --noconsole --onefile --name "VidSrcJellyfin" --icon="NONE" --add-data "api;api" --add-data "core;core" --add-data "ui;ui" main.py
     ```
-3.  **Result:** Your standalone app will be in the `dist/` folder. The app will automatically create and maintain `jellyfin_config.json` in the same directory as the `.exe`.
-
----
-
-## ⚠️ Known Limitations & Troubleshooting
-
-### 🛑 Rate Limiting
-*   **Media Scraping:** If you are batch-downloading hundreds of episodes at once, providers may occasionally rate-limit your connection. **Always verify your download folder** after a large batch.
-*   **Subtitle Provider:** Subtitle sources can experience high traffic and may temporarily rate-limit requests.
-
-### 📝 Subtitle Language
-*   **English Only:** Subtitles are currently only supported in English.
+3.  **Silent Updates:** For compiled versions, the app features an **Auto-Updater**. It silently downloads new releases in the background and presents a **"RESTART TO UPDATE"** button when ready.
 
 ---
 
 ## ✨ Features at a Glance
-*   **🚀 High-Performance UI:** Experience "Nuclear Resize Optimization" (Dynamic UI Hiding) for perfectly smooth 60FPS window movement and resizing.
-*   **📱 Responsive & Robust Design:** All windows (Main, Settings, Dashboard) feature smart minimum/maximum constraints and adaptive grid layouts.
+*   **🧵 Multi-Threaded Workers:** Process multiple downloads in parallel with isolated scraper instances.
+*   **🚀 Persistent Scraper Pool:** Optimized browser lifecycle management using CDP to avoid CPU-heavy browser restarts.
+*   **📊 Real Progress Tracking:** Accurate percentage-based progress bars synced with the browser's internal download engine.
+*   **🔔 Native Notifications:** Windows 11 Toast notifications and Discord webhooks for instant status updates.
+*   **📂 Full Metadata Automation:** Detailed `.nfo` generation for movies, shows, and episodes, including season posters.
+*   **🔄 Auto-Mode Switching:** Seamlessly transitions between Movie and TV Show modes based on your selection.
 *   **🎮 Discord Rich Presence:** Show off what you're watching with posters, progress bars, and TMDB links.
-*   **⚡ Optimized Resource Usage:** Zero Disk I/O on the main thread. Heavy background tasks and API checks are offloaded to dedicated threads.
-*   **🧹 Smart Log Management:** Batched processing and automated log pruning (500-line cap) ensure long-term application speed.
-*   **📦 Metadata Caching:** Efficiently fetches and stores TMDB/Jellyfin metadata to save API limits.
-*   **👻 Headless Scraping:** No annoying browser windows popping up during the download process.
-*   **🗂️ Professional Organization:** Automatic, industry-standard folder structures (`Show Name/Season 01/`).
+*   **⚡ Optimized State Management:** Debounced configuration saving to minimize Disk I/O and maintain UI snappiness.
+*   **📦 Standalone Auto-Updater:** Background release downloading with one-click installation for `.exe` users.
 *   **📊 Live Dashboard:** Monitor server storage and active streams in real-time.
 *   **📜 History Management:** Keep track of downloads and delete server items directly from the app.
 
 ---
 
 ## ⚖️ Disclaimer
-This project is for educational and personal use only. The developers do not host any media and are not responsible for how the tool is used. Please support official releases whenever possible.
+This project is for educational and personal use only. The developer does not host any media and is not responsible for how the tool is used. Please support official releases whenever possible.
