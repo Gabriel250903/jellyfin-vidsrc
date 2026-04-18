@@ -114,6 +114,7 @@ class DownloadHandler(FileSystemEventHandler):
                             pass
 
             events.emit("task_status_update", task_id, "FINISHED")
+            events.emit("file_processed", task_id, path)
         except Exception as e:
             events.emit("log", f"FILE HANDLER CRITICAL ERROR: {e}")
 

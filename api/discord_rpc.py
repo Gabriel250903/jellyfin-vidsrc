@@ -126,7 +126,7 @@ class DiscordRPCManager:
 
         jellyfin_url = self._get_config("jellyfin_url")
         jellyfin_api_key = self._get_config("jellyfin_api_key")
-        rpc_target_user = self._get_config("rpc_target_user")
+        rpc_target_user = self._get_config("jellyfin_managed_user") or self._get_config("rpc_target_user")
         tmdb_api_key = self._get_config("tmdb_api_key")
         rpc_show_server = self._get_config("rpc_show_server")
 

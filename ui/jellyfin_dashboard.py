@@ -731,7 +731,41 @@ class JellyfinDashboard(ctk.CTkToplevel):
             return
         for w in self.streams_scroll.winfo_children():
             w.destroy()
+        
         sessions = self.app.last_jelly_sessions
+        managed_user = getattr(self.app, "jellyfin_managed_user", "")
+        
+        your_sessions = {}
+        server_sessions = {}
+        
+        for sid, info in sessions.items():
+            if managed_user and info["user"].lower() == managed_user.lower():
+                your_sessions[sid] = info
+            else:
+                server_sessions[sid] = info
+
+        if your_sessions:
+            ctk.CTkLabel(
+                self.streams_scroll,
+                text="YOUR ACTIVITY",
+                font=("Segoe UI", 12, "bold"),
+                text_color="#3498db",
+                anchor="w",
+            ).pack(fill="x", padx=10, pady=(10, 5))
+            for sid, info in your_sessions.items():
+                self.render_session_card(sid, info, is_managed=True)
+        
+        if server_sessions:
+            ctk.CTkLabel(
+                self.streams_scroll,
+                text="SERVER ACTIVITY",
+                font=("Segoe UI", 12, "bold"),
+                text_color="gray",
+                anchor="w",
+            ).pack(fill="x", padx=10, pady=(15, 5))
+            for sid, info in server_sessions.items():
+                self.render_session_card(sid, info, is_managed=False)
+
         if not sessions:
             ctk.CTkLabel(
                 self.streams_scroll,
@@ -739,39 +773,74 @@ class JellyfinDashboard(ctk.CTkToplevel):
                 font=("Segoe UI", 13, "italic"),
                 text_color="gray",
             ).pack(pady=40)
-            return
-        for sid, info in sessions.items():
-            card = ctk.CTkFrame(
-                self.streams_scroll, fg_color=("#ffffff", "#1a1a1a"), corner_radius=8
-            )
-            card.pack(fill="x", pady=5, padx=5)
-            card.grid_columnconfigure(0, weight=1)
-            info_f = ctk.CTkFrame(card, fg_color="transparent")
-            info_f.grid(row=0, column=0, sticky="nsew", padx=15, pady=10)
-            ctk.CTkLabel(
-                info_f, text=info["title"], font=("Segoe UI", 14, "bold"), anchor="w"
-            ).pack(fill="x")
-            ctk.CTkLabel(
-                info_f,
-                text=f"User: {info['user']} • Client: {info['client']}",
-                font=("Segoe UI", 11),
-                text_color="#3498db",
-                anchor="w",
-            ).pack(fill="x")
-            btn_f = ctk.CTkFrame(card, fg_color="transparent")
-            btn_f.grid(row=0, column=1, padx=15)
+
+    def render_session_card(self, sid, info, is_managed=False):
+        card = ctk.CTkFrame(
+            self.streams_scroll, fg_color=("#ffffff", "#1a1a1a"), corner_radius=8
+        )
+        card.pack(fill="x", pady=5, padx=5)
+        card.grid_columnconfigure(0, weight=1)
+        
+        info_f = ctk.CTkFrame(card, fg_color="transparent")
+        info_f.grid(row=0, column=0, sticky="nsew", padx=15, pady=10)
+        
+        ctk.CTkLabel(
+            info_f, text=info["title"], font=("Segoe UI", 14, "bold"), anchor="w"
+        ).pack(fill="x")
+        
+        ctk.CTkLabel(
+            info_f,
+            text=f"User: {info['user']} • Client: {info['client']}",
+            font=("Segoe UI", 11),
+            text_color="#3498db",
+            anchor="w",
+        ).pack(fill="x")
+
+        # Remote Controls for Managed User
+        if is_managed:
+            ctrl_f = ctk.CTkFrame(info_f, fg_color="transparent")
+            ctrl_f.pack(fill="x", pady=(8, 0))
+            
+            btn_style = {"width": 35, "height": 30, "font": ("Segoe UI", 12, "bold")}
+            
             ctk.CTkButton(
-                btn_f,
-                text="Kill Now",
-                width=80,
-                height=28,
-                fg_color="#e74c3c",
-                hover_color="#c0392b",
-                font=("Segoe UI", 11, "bold"),
-                command=lambda s=sid: self.app.run_async(
-                    self.app.jellyfin_api.kill_session(s)
-                ),
-            ).pack(side="left", padx=5)
+                ctrl_f, text="⏯", **btn_style,
+                command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "PlayPause"))
+            ).pack(side="left", padx=2)
+            
+            ctk.CTkButton(
+                ctrl_f, text="⏹", **btn_style, fg_color="#e74c3c", hover_color="#c0392b",
+                command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "Stop"))
+            ).pack(side="left", padx=2)
+            
+            ctk.CTkLabel(ctrl_f, text=" Vol: ", font=("Segoe UI", 11)).pack(side="left", padx=(10, 0))
+            
+            ctk.CTkButton(
+                ctrl_f, text="-", width=25, height=30,
+                command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeDown"))
+            ).pack(side="left", padx=2)
+            
+            ctk.CTkButton(
+                ctrl_f, text="+", width=25, height=30,
+                command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeUp"))
+            ).pack(side="left", padx=2)
+
+        # Admin Controls (Kill)
+        btn_f = ctk.CTkFrame(card, fg_color="transparent")
+        btn_f.grid(row=0, column=1, padx=15)
+        
+        ctk.CTkButton(
+            btn_f,
+            text="Kill Now",
+            width=80,
+            height=28,
+            fg_color="#e74c3c",
+            hover_color="#c0392b",
+            font=("Segoe UI", 11, "bold"),
+            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.kill_session(s)),
+        ).pack(side="left", padx=5)
+        
+        if not is_managed:
             ctk.CTkButton(
                 btn_f,
                 text="5m Warning & Kill",
@@ -782,9 +851,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
                 font=("Segoe UI", 11, "bold"),
                 command=lambda s=sid: self.app.run_async(
                     self.app.jellyfin_api.timed_kill(
-                        s,
-                        5,
-                        "Admin: This stream will be terminated in 5 minutes for maintenance.",
+                        s, 5, "Admin: This stream will be terminated in 5 minutes for maintenance."
                     )
                 ),
             ).pack(side="left", padx=5)

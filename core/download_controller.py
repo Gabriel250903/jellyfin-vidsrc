@@ -42,6 +42,12 @@ class DownloadController:
         self.current_status = "IDLE"
         self.missing_links = []
 
+        events.subscribe("file_processed", self._on_file_processed)
+
+    def _on_file_processed(self, task_id, path):
+        if self.jellyfin_api:
+            self._run_sync(self.jellyfin_api.trigger_scan(path))
+
     @property
     def scraper(self):
         from core.scraper import VidSrcScraper

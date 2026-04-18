@@ -9,7 +9,6 @@ import queue
 import asyncio
 import aiohttp
 import webbrowser
-from watchdog.observers import Observer
 
 VERSION = "1.0.0"
 REPO = "Gabriel250903/jellyfin-vidsrc"
@@ -231,7 +230,7 @@ class VidSrcJellyfin(ctk.CTk):
 
         self.after(0, lambda: self.state("zoomed"))
         self.after(2000, lambda: self.run_async(self.check_for_updates()))
-        self.after(5000, self._jellyfin_check_loop)
+        self.after(3000, lambda: self.jellyfin_api.start_websocket(self.loop))
 
     def get_config(self):
         return config.config
@@ -1217,19 +1216,6 @@ class VidSrcJellyfin(ctk.CTk):
         except Exception as e:
             self.log(f"ERROR clearing tasks: {e}")
 
-    def _jellyfin_check_loop(self):
-        threading.Thread(target=self.update_status_background, daemon=True).start()
-        self.after(10000, self._jellyfin_check_loop)
-
-    def update_status_background(self):
-        try:
-            self.run_async(self.jellyfin_api.update_status())
-            self.update_local_storage_status()
-
-            self.after(0, self._refresh_status_uis)
-        except Exception as e:
-            print(f"Background status update error: {e}")
-
     def _refresh_status_uis(self):
         if self.jelly_dashboard and self.jelly_dashboard.winfo_exists():
             self.jelly_dashboard.refresh_ui()
@@ -1911,6 +1897,7 @@ class VidSrcJellyfin(ctk.CTk):
             if config.get("rpc_show_server") is not None
             else True
         )
+        self.jellyfin_managed_user = str(config.get("jellyfin_managed_user") or "")
 
         self.toggle_jellyfin_ui()
         self.render_history()
@@ -1935,6 +1922,7 @@ class VidSrcJellyfin(ctk.CTk):
             "rpc_target_user": self.rpc_target_user,
             "rpc_show_time": self.rpc_show_time,
             "rpc_show_server": self.rpc_show_server,
+            "jellyfin_managed_user": self.jellyfin_managed_user,
         }
         config.update(data)
 

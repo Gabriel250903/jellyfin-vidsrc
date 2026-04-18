@@ -50,6 +50,7 @@ class ConfigManager:
             "rpc_target_user": "",
             "rpc_show_time": True,
             "rpc_show_server": True,
+            "jellyfin_managed_user": "",
             "retention_target_user": "",
             "retention_free_space_gb": 50,
         }
