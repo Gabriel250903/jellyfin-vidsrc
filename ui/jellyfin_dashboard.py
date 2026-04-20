@@ -395,9 +395,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
         self.group_checkboxes.clear()
         self.current_visible_ids.clear()
 
-        # Drill-down view: Single Show episodes
         if self.current_show_filter:
-            # Add Back Button
             back_btn = ctk.CTkButton(
                 self.watched_scroll,
                 text=f"🔙 BACK TO {filter_val.upper()}",
@@ -422,7 +420,6 @@ class JellyfinDashboard(ctk.CTkToplevel):
             self.update_selection_ui()
             return
 
-        # Regular view with grouping
         filtered_items = []
         if filter_val == "All":
             filtered_items = items
@@ -444,7 +441,6 @@ class JellyfinDashboard(ctk.CTkToplevel):
         for item in filtered_items:
             self.current_visible_ids.add(item["Id"])
 
-        # Grouping Logic
         movies = [i for i in filtered_items if i["Type"] == "Movie"]
         episodes = [i for i in filtered_items if i["Type"] == "Episode"]
         
@@ -455,11 +451,9 @@ class JellyfinDashboard(ctk.CTkToplevel):
                 shows_groups[sname] = []
             shows_groups[sname].append(ep)
 
-        # Render Movies
         for item in movies:
             self.render_item_card(item)
             
-        # Render Show Groups
         for sname, eps in sorted(shows_groups.items()):
             self.render_show_group_card(sname, eps)
 
@@ -561,7 +555,6 @@ class JellyfinDashboard(ctk.CTkToplevel):
         card.pack(fill="x", pady=4, padx=5)
         card.grid_columnconfigure(1, weight=1)
         
-        # Checkbox selects all episodes
         all_selected = all(eid in self.selected_items for eid in ep_ids)
         cb_var = ctk.BooleanVar(value=all_selected)
         cb = ctk.CTkCheckBox(
@@ -796,7 +789,6 @@ class JellyfinDashboard(ctk.CTkToplevel):
             anchor="w",
         ).pack(fill="x")
 
-        # Remote Controls for Managed User
         if is_managed:
             ctrl_f = ctk.CTkFrame(info_f, fg_color="transparent")
             ctrl_f.pack(fill="x", pady=(8, 0))
@@ -825,7 +817,6 @@ class JellyfinDashboard(ctk.CTkToplevel):
                 command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeUp"))
             ).pack(side="left", padx=2)
 
-        # Admin Controls (Kill)
         btn_f = ctk.CTkFrame(card, fg_color="transparent")
         btn_f.grid(row=0, column=1, padx=15)
         

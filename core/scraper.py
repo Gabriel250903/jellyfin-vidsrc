@@ -174,14 +174,14 @@ class VidSrcScraper:
             self.current_folder = None
             self.task_file_map = {}
 
-    def check_no_links(self, task_id, media_name):
+    def check_no_links(self, task_id, display_name):
         try:
             if not self.driver:
                 return False
             page_text = self.driver.page_source
             if "No download links or subtitles available" in page_text:
-                events.emit("log", f"SCRAPER: No links for {task_id}. Skipping.")
-                self.controller.missing_links.append(f"{media_name} - {task_id}")
+                events.emit("log", f"SCRAPER: No links for {display_name}. Skipping.")
+                self.controller.missing_links.append(display_name)
                 return True
         except Exception as e:
             events.emit("log", f"SCRAPER ERROR: Failed to check links: {e}")
@@ -250,7 +250,7 @@ class VidSrcScraper:
         if target_found:
             events.emit(
                 "log",
-                f"SCRAPER: {task_id} already exists in {os.path.basename(folder)}. Skipping.",
+                f"SCRAPER: {display_name} already exists in {os.path.basename(folder)}. Skipping.",
             )
             events.emit(
                 "task_status_update",
@@ -262,7 +262,7 @@ class VidSrcScraper:
         t_url = f"https://dl.vidsrc.vip/{type_m}/{tid}" + (
             f"/{s}/{ep}" if type_m == "tv" else ""
         )
-        events.emit("log", f"SCRAPER: Fetching {task_id}...")
+        events.emit("log", f"SCRAPER: Fetching {display_name}...")
         events.emit("task_status_update", task_id, "FETCHING", 0.2)
 
         try:
@@ -290,15 +290,15 @@ class VidSrcScraper:
                     driver = self._get_driver(folder)
 
             if not nav_success:
-                events.emit("log", f"SCRAPER: Failed to load page for {task_id}")
+                events.emit("log", f"SCRAPER: Failed to load page for {display_name}")
                 return False
 
         except Exception as e:
-            events.emit("log", f"SCRAPER: Navigation critical error for {task_id}: {e}")
+            events.emit("log", f"SCRAPER: Navigation critical error for {display_name}: {e}")
             return False
 
         try:
-            if self.check_no_links(task_id, media_name):
+            if self.check_no_links(task_id, display_name):
                 events.emit("task_status_update", task_id, "SKIPPED")
                 return True
 
@@ -340,7 +340,7 @@ class VidSrcScraper:
                                 continue
 
                     if not btn:
-                        if self.check_no_links(task_id, media_name):
+                        if self.check_no_links(task_id, display_name):
                             events.emit("task_status_update", task_id, "SKIPPED")
                             return True
                         raise Exception("Download buttons not found")
@@ -439,7 +439,7 @@ class VidSrcScraper:
                         break
                 except Exception as e:
                     events.emit(
-                        "log", f"SCRAPER: Attempt {attempt+1} failed for {task_id}: {e}"
+                        "log", f"SCRAPER: Attempt {attempt+1} failed for {display_name}: {e}"
                     )
                     driver.refresh()
                     time.sleep(4)
@@ -451,7 +451,7 @@ class VidSrcScraper:
             return success
 
         except Exception as e:
-            events.emit("log", f"SCRAPER CRITICAL ERROR for {task_id}: {e}")
+            events.emit("log", f"SCRAPER CRITICAL ERROR for {display_name}: {e}")
             self.controller.failed_tasks.append(
                 (folder, tid, type_m, s, ep, quality, sub_only, video_only)
             )

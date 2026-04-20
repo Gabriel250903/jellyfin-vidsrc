@@ -4,7 +4,6 @@ import asyncio
 import io
 import functools
 from PIL import Image, ImageOps
-import customtkinter as ctk
 from core.utils import sanitize_path
 from core.event_system import events
 
@@ -273,6 +272,74 @@ class TMDBAPI:
         except Exception as e:
             events.emit("log", f"ERROR fetching popular: {e}")
             return [], [], 0
+
+    async def fetch_genres(self, cat="movie"):
+        try:
+            key = self._get_api_key()
+            url = f"https://api.themoviedb.org/3/genre/{cat}/list?api_key={key}"
+            res = await self._get(url)
+            return res.get("genres", [])
+        except Exception as e:
+            events.emit("log", f"ERROR fetching genres: {e}")
+            return []
+
+    async def fetch_discover(self, cat="movie", page=1, genre_id=None):
+        try:
+            key = self._get_api_key()
+            url = f"https://api.themoviedb.org/3/discover/{cat}?api_key={key}&page={page}&sort_by=popularity.desc"
+            if genre_id:
+                url += f"&with_genres={genre_id}"
+            res = await self._get(url)
+            results = res.get("results", [])
+            posters = await self.preload_posters(results)
+            return results, posters, res.get("total_pages", 1)
+        except Exception as e:
+            events.emit("log", f"ERROR fetching discover: {e}")
+            return [], [], 0
+
+    async def fetch_full_details(self, tid, cat):
+        try:
+            key = self._get_api_key()
+            append = "credits,videos,similar,recommendations"
+            if cat == "movie":
+                append += ",release_dates"
+            else:
+                append += ",content_ratings,external_ids"
+            url = f"https://api.themoviedb.org/3/{cat}/{tid}?api_key={key}&append_to_response={append}"
+            return await self._get(url)
+        except Exception as e:
+            events.emit("log", f"ERROR fetching full details: {e}")
+            return {}
+
+    async def fetch_season_details(self, tid, s_num):
+        try:
+            key = self._get_api_key()
+            url = f"https://api.themoviedb.org/3/tv/{tid}/season/{s_num}?api_key={key}"
+            return await self._get(url)
+        except Exception as e:
+            events.emit("log", f"ERROR fetching season details: {e}")
+            return {}
+
+    async def load_backdrop(self, p):
+        try:
+            cache_dir = "cache/backdrops"
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
+
+            cache_path = os.path.join(cache_dir, p.lstrip("/"))
+            if os.path.exists(cache_path):
+                img = self._get_cached_image(cache_path)
+            else:
+                url = f"https://image.tmdb.org/t/p/w1280{p}"
+                img_data = await self._get_raw(url, timeout=20)
+                with open(cache_path, "wb") as f:
+                    f.write(img_data)
+                img = Image.open(io.BytesIO(img_data))
+
+            return img
+        except Exception as e:
+            events.emit("log", f"ERROR loading backdrop: {e}")
+            return None
 
     async def get_poster_image(self, p_path, size=(100, 150)):
         if not p_path:

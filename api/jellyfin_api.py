@@ -12,6 +12,8 @@ class JellyfinAPI:
         self._session = None
         self._ws_task = None
         self._ws_running = False
+        self._last_ws_error = None
+        self._last_status_error = None
         self.tmdb_keys = [
             "fb7bb23f03b6994dafc674c074d01761",
             "e55425032d3d0f371fc776f302e7c09b",
@@ -122,8 +124,6 @@ class JellyfinAPI:
                     if res.status == 200:
                         sessions = await res.json()
                         for s in sessions:
-                            # If managed_user is set, only send to their sessions.
-                            # Otherwise, send to all (current behavior).
                             if managed_user and s.get("UserName", "").lower() != managed_user.lower():
                                 continue
 
@@ -153,9 +153,10 @@ class JellyfinAPI:
 
         try:
             headers = {"X-Emby-Token": api_key}
+            timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(trust_env=False) as session:
                 async with session.get(
-                    f"{url_base}/Users", headers=headers, timeout=5, ssl=False
+                    f"{url_base}/Users", headers=headers, timeout=timeout, ssl=False
                 ) as res:
                     if res.status == 200:
                         return await res.json()
@@ -300,7 +301,6 @@ class JellyfinAPI:
             headers = {"X-Emby-Token": api_key, "Content-Length": "0"}
             timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(trust_env=False) as session:
-                # Some commands are endpoints like /Playing/Stop, others are /Command/Type
                 if command in ["Stop", "Pause", "Unpause", "PlayPause", "Mute", "Unmute", "VolumeUp", "VolumeDown"]:
                     endpoint = f"{url_base}/Sessions/{session_id}/Playing/{command}"
                 else:
@@ -310,7 +310,6 @@ class JellyfinAPI:
                     if res.status < 300:
                         return True
                     
-                    # Fallback to general command if specific endpoint fails
                     headers_json = {"X-Emby-Token": api_key, "Content-Type": "application/json"}
                     payload = {"Name": command, "Arguments": args or {}}
                     async with session.post(
@@ -425,7 +424,7 @@ class JellyfinAPI:
 
                 if users:
                     async with session.get(
-                        f"{url_base}/Users/{users[0]['Id']}/Items",
+                        f"{users[0]['Id']}/Items",
                         headers=headers,
                         params=params,
                         ssl=False,
@@ -486,6 +485,7 @@ class JellyfinAPI:
                 "jellyfin_status_update",
                 {"status": "Online", "version": info.get("Version", "?")},
             )
+            self._last_status_error = None
 
             async with session.get(
                 f"{url_base}/System/Info/Storage",
@@ -542,10 +542,17 @@ class JellyfinAPI:
                     events.emit("jellyfin_sessions_update", curr)
                     events.emit("jellyfin_streams_count", len(active))
 
-        except (aiohttp.ClientError, asyncio.TimeoutError):
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             events.emit("jellyfin_status_update", {"status": "Offline"})
+            err_msg = str(e)
+            if self._last_status_error != err_msg:
+                events.emit("log", f"JELLYFIN: Connection lost/failed ({err_msg})")
+                self._last_status_error = err_msg
         except Exception as e:
-            events.emit("log", f"JELLYFIN STATUS CRITICAL ERROR: {e}")
+            err_msg = str(e)
+            if self._last_status_error != err_msg:
+                events.emit("log", f"JELLYFIN STATUS CRITICAL ERROR: {e}")
+                self._last_status_error = err_msg
 
     async def fetch_watched_content(self, on_success):
         url_base = self._get_url()
@@ -747,8 +754,8 @@ class JellyfinAPI:
                 async with aiohttp.ClientSession(trust_env=False) as session:
                     async with session.ws_connect(ws_url, ssl=False, heartbeat=30) as ws:
                         events.emit("log", "JELLYFIN: WebSocket connected.")
+                        self._last_ws_error = None
                         
-                        # Initial status check
                         await self.update_status()
 
                         async for msg in ws:
@@ -757,15 +764,17 @@ class JellyfinAPI:
                                 msg_type = data.get("MessageType")
                                 
                                 if msg_type in ["Sessions", "PlaybackStart", "PlaybackStop", "UserDataChanged", "LibraryChanged"]:
-                                    # Trigger a full status update for these events to keep UI in sync
                                     await self.update_status()
                             elif msg.type in [aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR]:
                                 break
             except Exception as e:
-                events.emit("log", f"JELLYFIN: WebSocket error: {e}")
+                err_msg = str(e)
+                if self._last_ws_error != err_msg:
+                    events.emit("log", f"JELLYFIN: WebSocket connection failed ({err_msg})")
+                    self._last_ws_error = err_msg
             
             if self._ws_running:
-                await asyncio.sleep(5)  # Reconnect delay
+                await asyncio.sleep(5)
 
     def stop_websocket(self):
         self._ws_running = False

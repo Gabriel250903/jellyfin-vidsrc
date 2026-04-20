@@ -1,5 +1,6 @@
 import asyncio
 import aiohttp
+import time
 from pypresence.presence import AioPresence
 from core.event_system import events
 
@@ -15,6 +16,7 @@ class DiscordRPCManager:
         self.tmdb_cache = {}
         self.metadata_cache = {}
         self._session = None
+        self._last_rpc_error = None
 
         if self._get_config("rpc_enabled"):
             self.start()
@@ -51,47 +53,42 @@ class DiscordRPCManager:
                 self.task.cancel()
             self.task = None
 
-        if hasattr(self.config_provider, "loop"):
-            asyncio.run_coroutine_threadsafe(
-                self._cleanup_presence(), self.config_provider.loop
-            )
-        else:
-            asyncio.create_task(self._cleanup_presence())
-
-    async def _cleanup_presence(self):
-        if self.connected and self.presence:
-            try:
-                await self.presence.clear()
-                self.presence.close()
-            except:
-                pass
-        self.connected = False
-        self.presence = None
-        self.last_item_id = None
-        self.last_play_state = None
-        self.tmdb_cache = {}
-        self.metadata_cache = {}
-
     def restart(self):
         self.stop()
         if self._get_config("rpc_enabled"):
             self.start()
 
     async def _connect(self):
-        rpc_client_id = self._get_config("rpc_client_id")
-        if not rpc_client_id:
-            client_id = "1487889864119816225"
-        else:
-            client_id = rpc_client_id
-
         try:
+            client_id = self._get_config("rpc_client_id")
+            if not client_id:
+                return
+
+            if self.presence:
+                await self.presence.clear() # type: ignore
+                self.presence = None
+
             self.presence = AioPresence(client_id)
             await self.presence.connect()
             self.connected = True
-            events.emit("log", f"RPC: Connected to Discord with Client ID {client_id}")
+            events.emit("log", "RPC: Connected to Discord.")
+            self._last_rpc_error = None
         except Exception as e:
-            events.emit("log", f"RPC: Failed to connect to Discord: {e}")
             self.connected = False
+            err_msg = str(e)
+            if self._last_rpc_error != err_msg:
+                events.emit("log", f"RPC: Connection failed ({err_msg})")
+                self._last_rpc_error = err_msg
+
+    async def _cleanup_presence(self):
+        if self.presence:
+            try:
+                await self.presence.clear() # type: ignore
+                await self.presence.close() # type: ignore
+            except:
+                pass
+            self.presence = None
+        self.connected = False
 
     async def _loop(self):
         try:
@@ -105,7 +102,10 @@ class DiscordRPCManager:
                 try:
                     await self._update_presence()
                 except Exception as e:
-                    events.emit("log", f"RPC ERROR: {e}")
+                    err_msg = str(e)
+                    if self._last_rpc_error != err_msg:
+                        events.emit("log", f"RPC ERROR: {err_msg}")
+                        self._last_rpc_error = err_msg
                     self.connected = False
 
                 await asyncio.sleep(5)
@@ -131,7 +131,8 @@ class DiscordRPCManager:
         rpc_show_server = self._get_config("rpc_show_server")
 
         if not jellyfin_url or not jellyfin_api_key:
-            await self.presence.clear()
+            if self.presence:
+                await self.presence.clear() # type: ignore
             return
 
         headers = {"X-Emby-Token": jellyfin_api_key}
@@ -143,8 +144,12 @@ class DiscordRPCManager:
             ) as res:
                 res.raise_for_status()
                 sessions = await res.json()
+                self._last_rpc_error = None
         except Exception as e:
-            events.emit("log", f"RPC ERROR: Failed to fetch Jellyfin sessions: {e}")
+            err_msg = str(e)
+            if self._last_rpc_error != err_msg:
+                events.emit("log", f"RPC ERROR: Failed to fetch Jellyfin sessions: {err_msg}")
+                self._last_rpc_error = err_msg
             return
 
         target_session = None
@@ -196,106 +201,58 @@ class DiscordRPCManager:
         else:
             details = title
 
-        ticks = play_state.get("PositionTicks", 0)
-        runtime_ticks = item.get("RunTimeTicks", 0)
-        pos_str = self._format_ticks(ticks)
-        total_str = self._format_ticks(runtime_ticks)
+        if rpc_show_server and jellyfin_url:
+            server_name = jellyfin_url.split("//")[-1].split(":")[0]
+            buttons.append({"label": f"Server: {server_name}", "url": jellyfin_url})
 
-        if runtime_ticks > 0:
-            state = f"{state} ({pos_str} / {total_str})"
+        current_play_state = (item_id, is_paused)
+        if current_play_state != self.last_play_state:
+            self.last_play_state = current_play_state
 
-        if item_id and tmdb_api_key:
-            tmdb_id = None
-            media_type = "movie"
-
-            if item_type == "Episode":
-                target_id = item.get("SeriesId")
-                tmdb_id = item.get("SeriesProviderIds", {}).get(
-                    "Tmdb"
-                ) or self.metadata_cache.get(target_id)
-                media_type = "tv"
-            else:
-                target_id = item_id
-                tmdb_id = item.get("ProviderIds", {}).get(
-                    "Tmdb"
-                ) or self.metadata_cache.get(target_id)
-                media_type = "movie"
-
-            if not tmdb_id and target_id:
-                try:
-                    timeout = aiohttp.ClientTimeout(total=3)
-                    async with session.get(
-                        f"{jellyfin_url}/Users/{target_session.get('UserId')}/Items/{target_id}",
-                        headers=headers,
-                        timeout=timeout,
-                    ) as res:
-                        item_res = await res.json()
-                        tmdb_id = item_res.get("ProviderIds", {}).get("Tmdb")
-                        if tmdb_id:
-                            self.metadata_cache[target_id] = tmdb_id
-                            events.emit(
-                                "log",
-                                f"RPC: Fetched metadata for {title}. Found TMDB ID: {tmdb_id}",
-                            )
-                except Exception as e:
-                    events.emit("log", f"RPC ERROR: Failed to fetch item metadata: {e}")
-
-            if tmdb_id:
-                cache_key = f"{media_type}_{tmdb_id}"
-                if cache_key in self.tmdb_cache:
-                    cached_data = self.tmdb_cache[cache_key]
-                    large_image = cached_data.get("poster", large_image)
-                    tmdb_page_url = cached_data.get("url")
-                    if tmdb_page_url:
-                        buttons.append({"label": "View on TMDB", "url": tmdb_page_url})
-                else:
-                    tmdb_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?api_key={tmdb_api_key}"
-                    try:
-                        timeout = aiohttp.ClientTimeout(total=3)
-                        async with session.get(tmdb_url, timeout=timeout) as res:
-                            t_res = await res.json()
-                            poster_path = t_res.get("poster_path")
-                            tmdb_page_url = (
-                                f"https://www.themoviedb.org/{media_type}/{tmdb_id}"
-                            )
-
-                            if poster_path:
-                                large_image = (
-                                    f"https://image.tmdb.org/t/p/w500{poster_path}"
-                                )
-
-                            self.tmdb_cache[cache_key] = {
-                                "poster": large_image,
-                                "url": tmdb_page_url,
-                            }
-                            buttons.append(
-                                {"label": "View on TMDB", "url": tmdb_page_url}
-                            )
-                    except Exception as e:
-                        events.emit("log", f"RPC ERROR: Failed to fetch TMDB data: {e}")
-
-        if not large_image or large_image == "jellyfin_logo":
             large_image = "jellyfin_logo"
+            if tmdb_api_key:
+                try:
+                    tmdb_id = item.get("ProviderIds", {}).get("Tmdb")
+                    if not tmdb_id:
+                        search_url = f"https://api.themoviedb.org/3/search/{'tv' if item_type == 'Episode' else 'movie'}?api_key={tmdb_api_key}&query={series_name if item_type == 'Episode' else title}"
+                        async with session.get(search_url) as search_res:
+                            search_data = await search_res.json()
+                            if search_data.get("results"):
+                                tmdb_id = search_data["results"][0]["id"]
 
-        kwargs = {
-            "details": details,
-            "state": state,
-            "large_image": large_image,
-            "large_text": title,
-            "small_image": small_image,
-            "small_text": small_text,
-        }
+                    if tmdb_id:
+                        cache_key = f"{item_type}_{tmdb_id}"
+                        if cache_key in self.tmdb_cache:
+                            large_image = self.tmdb_cache[cache_key]
+                        else:
+                            details_url = f"https://api.themoviedb.org/3/{'tv' if item_type == 'Episode' else 'movie'}/{tmdb_id}?api_key={tmdb_api_key}"
+                            async with session.get(details_url) as details_res:
+                                details_data = await details_res.json()
+                                poster_path = details_data.get("poster_path")
+                                if poster_path:
+                                    large_image = f"https://image.tmdb.org/t/p/w500{poster_path}"
+                                    self.tmdb_cache[cache_key] = large_image
+                except Exception as e:
+                    events.emit("log", f"RPC ERROR: Failed to fetch TMDB data: {e}")
 
-        if buttons:
-            kwargs["buttons"] = buttons
+            if not large_image or large_image == "jellyfin_logo":
+                large_image = "jellyfin_logo"
 
-        if rpc_show_server:
-            server_name = target_session.get("ServerName", "Jellyfin")
-            kwargs["large_text"] = server_name
+            kwargs = {
+                "details": details[:128],
+                "state": state[:128],
+                "large_image": large_image,
+                "large_text": "VidSrc Jellyfin",
+                "small_image": small_image,
+                "small_text": small_text,
+            }
 
-        kwargs["start"] = None
-        kwargs["end"] = None
+            if buttons:
+                kwargs["buttons"] = buttons
 
-        await self.presence.update(**kwargs)
-        self.last_item_id = item_id
-        self.last_play_state = is_paused
+            if self._get_config("rpc_show_time") and not is_paused:
+                pos_ticks = play_state.get("PositionTicks", 0)
+                pos_seconds = int(pos_ticks / 10000000)
+                kwargs["start"] = int(time.time()) - pos_seconds
+
+            await self.presence.update(**kwargs) # type: ignore

@@ -107,6 +107,8 @@ class SettingsWindow(ctk.CTkToplevel):
         self.user_menu.pack(pady=5, padx=20, fill="x")
 
         def update_users(users):
+            if not self.winfo_exists():
+                return
             names = [u["Name"] for u in users]
             if not names:
                 names = ["None"]

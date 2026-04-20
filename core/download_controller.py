@@ -622,7 +622,6 @@ class DownloadController:
             if not root:
                 return 0
 
-            # Find the closest existing parent folder to check disk usage without creating the path
             check_path = os.path.abspath(root)
             while not os.path.exists(check_path):
                 parent = os.path.dirname(check_path)
