@@ -53,6 +53,8 @@ class ConfigManager:
             "jellyfin_managed_user": "",
             "retention_target_user": "",
             "retention_free_space_gb": 50,
+            "retention_global_watch": False,
+            "retention_protect_collections": True,
         }
         self.config = self.defaults.copy()
         self._save_timer = None

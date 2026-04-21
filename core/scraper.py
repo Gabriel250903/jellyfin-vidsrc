@@ -294,7 +294,8 @@ class VidSrcScraper:
                 return False
 
         except Exception as e:
-            events.emit("log", f"SCRAPER: Navigation critical error for {display_name}: {e}")
+            if not self.controller.stop_event.is_set():
+                events.emit("log", f"SCRAPER: Navigation critical error for {display_name}: {e}")
             return False
 
         try:

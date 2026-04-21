@@ -235,6 +235,7 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
                     text="Status: Offline", text_color="#e74c3c"
                 ),
             )
+        self.after(100, self._refresh_status_uis)
 
     def _handle_jellyfin_storage_update(self, data):
         free_gb = data.get("free_gb")
@@ -261,6 +262,7 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
             0,
             lambda: self.lbl_jelly_streams.configure(text=f"Active Streams: {count}"),
         )
+        self.after(100, self._refresh_status_uis)
 
     def _update_speed_ui(self, speed):
         self.current_speed = speed

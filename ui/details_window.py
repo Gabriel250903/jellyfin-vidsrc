@@ -251,20 +251,22 @@ class DetailsWindow(ctk.CTkToplevel):
 
     def _on_poster_loaded(self, img):
         if img and self.winfo_exists():
+            self.current_poster_ptr = ctk.CTkImage(img, img, (250, 375))
             self.after(
                 0,
                 lambda: self.poster_label.configure(
-                    image=ctk.CTkImage(img, img, (250, 375)), text=""
+                    image=self.current_poster_ptr, text=""
                 ),
             )
 
     def _on_backdrop_loaded(self, img):
         if img and self.winfo_exists():
             img_fitted = ImageOps.fit(img, (1100, 300), Image.Resampling.LANCZOS)
+            self.current_backdrop_ptr = ctk.CTkImage(img_fitted, img_fitted, (1100, 300))
             self.after(
                 0,
                 lambda: self.backdrop_label.configure(
-                    image=ctk.CTkImage(img_fitted, img_fitted, (1100, 300)), text=""
+                    image=self.current_backdrop_ptr, text=""
                 ),
             )
 

@@ -43,14 +43,15 @@ class MainViewMixin:
 
                 def _on_loaded(img):
                     if img and self.selected_tid == tid:
-                        self.current_poster_ptr = ctk.CTkImage(
+                        new_img = ctk.CTkImage(
                             light_image=img, dark_image=img, size=(240, 340)
                         )
                         self.poster_label.configure(
-                            image=self.current_poster_ptr,
+                            image=new_img,
                             text="",
                             fg_color="transparent",
                         )
+                        self.current_poster_ptr = new_img
 
                 self.run_async(self.tmdb_api.load_poster(poster_path), _on_loaded)
 

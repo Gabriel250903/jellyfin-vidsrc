@@ -59,7 +59,20 @@ Connecting Jellyfin allows the app to trigger library scans and monitor your ser
 4.  Copy the key and paste it into the **API Key** field in the app's Jellyfin section.
 5.  **Enter your Server URL:**
     *   Your URL should look like `http://192.168.1.100:8096`.
-6.  Enable **"Show Jellyfin features"** to unlock the Live Dashboard and RPC tracking.
+6.  **Target User:** Set a "Managed User" to filter Discord RPC and cleanup policies to a specific account.
+7.  Enable **"Show Jellyfin features"** to unlock the Live Dashboard and RPC tracking.
+
+### 📊 Live Dashboard & Remote Control
+Monitor your server's health and manage active streams in real-time.
+*   **Storage Tracking:** Real-time visualization of server disk space.
+*   **Interactive Remote Control:** Manage **any** active stream on the server. Play/Pause, Stop, or adjust Volume directly from the dashboard.
+*   **Session Management:** "Kill Now" or "Timed Kill" (with warning message) for server maintenance.
+
+### 🧹 Intelligent Cleanup Policies
+Automate library maintenance with surgical precision to save space without losing important content.
+*   **Global Watch Check:** Ensure a file is only deleted if **every user** on the server has finished watching it.
+*   **Collection Protection:** Automatically protect items that are part of a Jellyfin Collection (BoxSet). Protected items are marked with a lock icon (🔒) in the UI.
+*   **Manual Batch Delete:** Select multiple watched items and delete them in one click with real-time progress.
 
 ### 💬 Setting up Notifications (Optional)
 Want to know when your show is ready while you're away?
@@ -86,6 +99,8 @@ You can control the resolution of your downloads to save space or ensure the hig
 *   Toggle between **TV Show** and **Movie** mode in the sidebar.
 *   Type your query in the search bar. You can search by name or even by **TMDB ID**.
 *   Click **SELECT** on the correct result. **Auto-Switch Mode:** If you click a movie from your history while in "TV Show" mode, the app will automatically switch modes for you.
+*   **🔍 Discover Tab:** Explore trending, popular, or genre-specific content. Use the **Genre Filter** to find exactly what you're looking for (e.g., Action, Comedy, Sci-Fi).
+*   **🖼️ Enhanced Details Window:** View high-resolution posters and backdrops, full plot summaries, and casting information before adding items to your queue.
 
 ### Step 2: Add to Queue
 *   **Configure the Batch:** 

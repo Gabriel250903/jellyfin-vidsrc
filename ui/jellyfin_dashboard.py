@@ -152,6 +152,25 @@ class JellyfinDashboard(ctk.CTkToplevel):
         self.retention_free.grid(row=0, column=3, padx=5)
         self.retention_free.insert(0, str(config.get("retention_free_space_gb", 50)))
 
+        policy_checks = ctk.CTkFrame(self.retention_frame, fg_color="transparent")
+        policy_checks.pack(fill="x", padx=10, pady=(0, 5))
+
+        self.retention_global_var = ctk.BooleanVar(value=config.get("retention_global_watch", False))
+        self.cb_global_watch = ctk.CTkCheckBox(
+            policy_checks, text="Global Watch (Everyone must have watched)", 
+            font=("Segoe UI", 11), variable=self.retention_global_var,
+            fg_color="#3498db", hover_color="#2980b9"
+        )
+        self.cb_global_watch.pack(side="left", padx=15)
+
+        self.retention_protect_var = ctk.BooleanVar(value=config.get("retention_protect_collections", True))
+        self.cb_protect_collections = ctk.CTkCheckBox(
+            policy_checks, text="Protect Collections", 
+            font=("Segoe UI", 11), variable=self.retention_protect_var,
+            fg_color="#3498db", hover_color="#2980b9"
+        )
+        self.cb_protect_collections.pack(side="left", padx=15)
+
         self.btn_run_policies = ctk.CTkButton(
             self.retention_frame,
             text="⚡ RUN CLEANUP POLICIES",
@@ -227,10 +246,13 @@ class JellyfinDashboard(ctk.CTkToplevel):
 
     def run_policies(self):
         user = self.retention_user.get().strip()
-        if not user:
+        global_watch = self.retention_global_var.get()
+        protect_collections = self.retention_protect_var.get()
+
+        if not user and not global_watch:
             messagebox.showwarning(
                 "Input Required",
-                "Please enter a Target User to run retention policies.\n\nThis user is used to identify watched content for deletion.",
+                "Please enter a Target User OR enable Global Watch to run retention policies.",
                 parent=self,
             )
             return
@@ -241,19 +263,31 @@ class JellyfinDashboard(ctk.CTkToplevel):
         except:
             pass
 
-        if messagebox.askyesno(
-            "Confirm Cleanup",
-            f"Run retention policies now?\n\nTarget User: {user}\nMin Free Space: {free_gb}GB\n\nThis may permanently delete watched items!",
-            parent=self,
-        ):
+        msg = f"Run retention policies now?\n\n"
+        if global_watch:
+            msg += "Mode: GLOBAL WATCH (Everyone has seen it)\n"
+        else:
+            msg += f"Target User: {user}\n"
+        
+        msg += f"Min Free Space: {free_gb}GB\n"
+        msg += f"Protect Collections: {'Yes' if protect_collections else 'No'}\n\n"
+        msg += "This may permanently delete watched items!"
+
+        if messagebox.askyesno("Confirm Cleanup", msg, parent=self):
             self.btn_run_policies.configure(state="disabled", text="RUNNING CLEANUP...")
             self.app.run_async(
                 self.app.jellyfin_api.execute_policies(
-                    user, free_gb, on_complete=self.on_policies_complete
+                    user, 
+                    free_gb, 
+                    global_watch=global_watch, 
+                    protect_collections=protect_collections, 
+                    on_complete=self.on_policies_complete
                 )
             )
             config.set("retention_target_user", user)
             config.set("retention_free_space_gb", free_gb)
+            config.set("retention_global_watch", global_watch)
+            config.set("retention_protect_collections", protect_collections)
 
     def on_policies_complete(self):
         if self.winfo_exists():
@@ -383,7 +417,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
         if not items:
             ctk.CTkLabel(
                 self.watched_scroll,
-                text="No watched items found.\nGo watch something!",
+                text="No watched items found on server.",
                 font=("Segoe UI", 15),
                 justify="center",
             ).pack(pady=80)
@@ -498,7 +532,11 @@ class JellyfinDashboard(ctk.CTkToplevel):
         info.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         
         type_badge = "🎬" if item["Type"] == "Movie" else "📺"
+        is_protected = bool(item.get("CollectionIds"))
         name_text = item["Name"]
+        if is_protected:
+            name_text = f"🔒 {name_text}"
+            
         if item["Type"] == "Episode" and item.get("SeasonNumber") is not None:
             s = str(item.get("SeasonNumber")).zfill(2)
             e = str(item.get("EpisodeNumber")).zfill(2)
@@ -789,33 +827,33 @@ class JellyfinDashboard(ctk.CTkToplevel):
             anchor="w",
         ).pack(fill="x")
 
-        if is_managed:
-            ctrl_f = ctk.CTkFrame(info_f, fg_color="transparent")
-            ctrl_f.pack(fill="x", pady=(8, 0))
-            
-            btn_style = {"width": 35, "height": 30, "font": ("Segoe UI", 12, "bold")}
-            
-            ctk.CTkButton(
-                ctrl_f, text="⏯", **btn_style,
-                command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "PlayPause"))
-            ).pack(side="left", padx=2)
-            
-            ctk.CTkButton(
-                ctrl_f, text="⏹", **btn_style, fg_color="#e74c3c", hover_color="#c0392b",
-                command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "Stop"))
-            ).pack(side="left", padx=2)
-            
-            ctk.CTkLabel(ctrl_f, text=" Vol: ", font=("Segoe UI", 11)).pack(side="left", padx=(10, 0))
-            
-            ctk.CTkButton(
-                ctrl_f, text="-", width=25, height=30,
-                command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeDown"))
-            ).pack(side="left", padx=2)
-            
-            ctk.CTkButton(
-                ctrl_f, text="+", width=25, height=30,
-                command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeUp"))
-            ).pack(side="left", padx=2)
+        # Playback Controls for all sessions
+        ctrl_f = ctk.CTkFrame(info_f, fg_color="transparent")
+        ctrl_f.pack(fill="x", pady=(8, 0))
+        
+        btn_style = {"width": 35, "height": 30, "font": ("Segoe UI", 12, "bold")}
+        
+        ctk.CTkButton(
+            ctrl_f, text="⏯", **btn_style,
+            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "PlayPause"))
+        ).pack(side="left", padx=2)
+        
+        ctk.CTkButton(
+            ctrl_f, text="⏹", **btn_style, fg_color="#e74c3c", hover_color="#c0392b",
+            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "Stop"))
+        ).pack(side="left", padx=2)
+        
+        ctk.CTkLabel(ctrl_f, text=" Vol: ", font=("Segoe UI", 11)).pack(side="left", padx=(10, 0))
+        
+        ctk.CTkButton(
+            ctrl_f, text="-", width=25, height=30,
+            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeDown"))
+        ).pack(side="left", padx=2)
+        
+        ctk.CTkButton(
+            ctrl_f, text="+", width=25, height=30,
+            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeUp"))
+        ).pack(side="left", padx=2)
 
         btn_f = ctk.CTkFrame(card, fg_color="transparent")
         btn_f.grid(row=0, column=1, padx=15)
