@@ -85,14 +85,13 @@ class JellyfinDashboard(ctk.CTkToplevel):
 
         self.tab_streams = self.tabview.add("Active Streams")
         self.tab_gaps = self.tabview.add("Missing Episodes")
-        self.tab_watched = self.tabview.add("Watched & Cleanup")
+        self.tab_watched = self.tabview.add("Cleanup")
 
-        self.tab_streams.grid_columnconfigure(0, weight=1)
-        self.tab_streams.grid_rowconfigure(0, weight=1)
         self.streams_scroll = ctk.CTkScrollableFrame(
             self.tab_streams, fg_color="transparent"
         )
         self.streams_scroll.grid(row=0, column=0, sticky="nsew")
+        self._make_drag_scrollable(self.streams_scroll)
 
         self.tab_gaps.grid_columnconfigure(0, weight=1)
         self.tab_gaps.grid_rowconfigure(1, weight=1)
@@ -114,78 +113,17 @@ class JellyfinDashboard(ctk.CTkToplevel):
         self.lbl_scan_progress.pack(side="left", padx=10)
         self.gaps_scroll = ctk.CTkScrollableFrame(self.tab_gaps, fg_color="transparent")
         self.gaps_scroll.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self._make_drag_scrollable(self.gaps_scroll)
 
         self.watched_container = ctk.CTkFrame(self.tab_watched, fg_color="transparent")
         self.watched_container.pack(fill="both", expand=True)
         self.watched_container.grid_columnconfigure(0, weight=1)
-        self.watched_container.grid_rowconfigure(3, weight=1)
-
-        self.retention_frame = ctk.CTkFrame(
-            self.watched_container, fg_color=("#f9f9f9", "#151515"), corner_radius=8
-        )
-        self.retention_frame.grid(row=0, column=0, sticky="ew", pady=(0, 15), padx=5)
-        ctk.CTkLabel(
-            self.retention_frame,
-            text="AUTOMATED RETENTION POLICIES",
-            font=("Segoe UI", 12, "bold"),
-            text_color="#3498db",
-        ).pack(pady=5)
-
-        policy_inputs = ctk.CTkFrame(self.retention_frame, fg_color="transparent")
-        policy_inputs.pack(fill="x", padx=10, pady=5)
-
-        ctk.CTkLabel(policy_inputs, text="Target User:", font=("Segoe UI", 11)).grid(
-            row=0, column=0, padx=5, sticky="e"
-        )
-        self.retention_user = ctk.CTkEntry(
-            policy_inputs, placeholder_text="Username", width=120, height=28
-        )
-        self.retention_user.grid(row=0, column=1, padx=5)
-        self.retention_user.insert(0, config.get("retention_target_user", ""))
-
-        ctk.CTkLabel(policy_inputs, text="Min Free GB:", font=("Segoe UI", 11)).grid(
-            row=0, column=2, padx=5, sticky="e"
-        )
-        self.retention_free = ctk.CTkEntry(
-            policy_inputs, placeholder_text="50", width=60, height=28
-        )
-        self.retention_free.grid(row=0, column=3, padx=5)
-        self.retention_free.insert(0, str(config.get("retention_free_space_gb", 50)))
-
-        policy_checks = ctk.CTkFrame(self.retention_frame, fg_color="transparent")
-        policy_checks.pack(fill="x", padx=10, pady=(0, 5))
-
-        self.retention_global_var = ctk.BooleanVar(value=config.get("retention_global_watch", False))
-        self.cb_global_watch = ctk.CTkCheckBox(
-            policy_checks, text="Global Watch (Everyone must have watched)", 
-            font=("Segoe UI", 11), variable=self.retention_global_var,
-            fg_color="#3498db", hover_color="#2980b9"
-        )
-        self.cb_global_watch.pack(side="left", padx=15)
-
-        self.retention_protect_var = ctk.BooleanVar(value=config.get("retention_protect_collections", True))
-        self.cb_protect_collections = ctk.CTkCheckBox(
-            policy_checks, text="Protect Collections", 
-            font=("Segoe UI", 11), variable=self.retention_protect_var,
-            fg_color="#3498db", hover_color="#2980b9"
-        )
-        self.cb_protect_collections.pack(side="left", padx=15)
-
-        self.btn_run_policies = ctk.CTkButton(
-            self.retention_frame,
-            text="⚡ RUN CLEANUP POLICIES",
-            height=35,
-            fg_color="#e67e22",
-            hover_color="#d35400",
-            font=("Segoe UI", 12, "bold"),
-            command=self.run_policies,
-        )
-        self.btn_run_policies.pack(pady=10, padx=20, fill="x")
+        self.watched_container.grid_rowconfigure(2, weight=1)
 
         self.watched_header = ctk.CTkFrame(
             self.watched_container, fg_color="transparent"
         )
-        self.watched_header.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.watched_header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         ctk.CTkLabel(
             self.watched_header, text="WATCHED CONTENT", font=("Segoe UI", 14, "bold")
         ).pack(side="left")
@@ -218,7 +156,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
         self.selection_bar = ctk.CTkFrame(
             self.watched_container, fg_color="transparent"
         )
-        self.selection_bar.grid(row=2, column=0, sticky="ew")
+        self.selection_bar.grid(row=1, column=0, sticky="ew")
 
         self.watched_scroll = ctk.CTkScrollableFrame(
             self.watched_container,
@@ -226,7 +164,8 @@ class JellyfinDashboard(ctk.CTkToplevel):
             corner_radius=0,
             border_width=0,
         )
-        self.watched_scroll.grid(row=3, column=0, sticky="nsew")
+        self.watched_scroll.grid(row=2, column=0, sticky="nsew")
+        self._make_drag_scrollable(self.watched_scroll)
 
         self.footer_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.footer_frame.grid(row=3, column=0, sticky="ew", padx=30, pady=20)
@@ -243,58 +182,6 @@ class JellyfinDashboard(ctk.CTkToplevel):
             command=self.destroy,
         )
         self.btn_close.grid(row=0, column=0, sticky="ew")
-
-    def run_policies(self):
-        user = self.retention_user.get().strip()
-        global_watch = self.retention_global_var.get()
-        protect_collections = self.retention_protect_var.get()
-
-        if not user and not global_watch:
-            messagebox.showwarning(
-                "Input Required",
-                "Please enter a Target User OR enable Global Watch to run retention policies.",
-                parent=self,
-            )
-            return
-
-        free_gb = 50
-        try:
-            free_gb = int(self.retention_free.get())
-        except:
-            pass
-
-        msg = f"Run retention policies now?\n\n"
-        if global_watch:
-            msg += "Mode: GLOBAL WATCH (Everyone has seen it)\n"
-        else:
-            msg += f"Target User: {user}\n"
-        
-        msg += f"Min Free Space: {free_gb}GB\n"
-        msg += f"Protect Collections: {'Yes' if protect_collections else 'No'}\n\n"
-        msg += "This may permanently delete watched items!"
-
-        if messagebox.askyesno("Confirm Cleanup", msg, parent=self):
-            self.btn_run_policies.configure(state="disabled", text="RUNNING CLEANUP...")
-            self.app.run_async(
-                self.app.jellyfin_api.execute_policies(
-                    user, 
-                    free_gb, 
-                    global_watch=global_watch, 
-                    protect_collections=protect_collections, 
-                    on_complete=self.on_policies_complete
-                )
-            )
-            config.set("retention_target_user", user)
-            config.set("retention_free_space_gb", free_gb)
-            config.set("retention_global_watch", global_watch)
-            config.set("retention_protect_collections", protect_collections)
-
-    def on_policies_complete(self):
-        if self.winfo_exists():
-            self.btn_run_policies.configure(
-                state="normal", text="⚡ RUN CLEANUP POLICIES"
-            )
-            self.scan_watched()
 
     def scan_gaps(self):
         if not self.winfo_exists():
@@ -390,6 +277,20 @@ class JellyfinDashboard(ctk.CTkToplevel):
         self.app.run_async(
             self.app.jellyfin_api.fetch_watched_content(self.display_watched)
         )
+
+    def _make_drag_scrollable(self, scroll_frame):
+        canvas = scroll_frame._parent_canvas
+        
+        def on_press(event):
+            canvas.scan_mark(event.x, event.y)
+            
+        def on_drag(event):
+            canvas.scan_dragto(event.x, event.y, gain=1)
+            
+        canvas.bind("<Button-1>", on_press, add="+")
+        canvas.bind("<B1-Motion>", on_drag, add="+")
+        scroll_frame.bind("<Button-1>", on_press, add="+")
+        scroll_frame.bind("<B1-Motion>", on_drag, add="+")
 
     def on_filter_changed(self, value):
         self.selected_items.clear()
@@ -770,7 +671,8 @@ class JellyfinDashboard(ctk.CTkToplevel):
         server_sessions = {}
         
         for sid, info in sessions.items():
-            if managed_user and info["user"].lower() == managed_user.lower():
+            user = info.get("user") or "System/TV"
+            if managed_user and user.lower() == managed_user.lower():
                 your_sessions[sid] = info
             else:
                 server_sessions[sid] = info
@@ -807,83 +709,132 @@ class JellyfinDashboard(ctk.CTkToplevel):
 
     def render_session_card(self, sid, info, is_managed=False):
         card = ctk.CTkFrame(
-            self.streams_scroll, fg_color=("#ffffff", "#1a1a1a"), corner_radius=8
+            self.streams_scroll, fg_color=("#ffffff", "#1a1a1a"), corner_radius=8, border_width=1, border_color=("#e0e0e0", "#2b2b2b")
         )
-        card.pack(fill="x", pady=5, padx=5)
+        card.pack(fill="x", pady=6, padx=10)
         card.grid_columnconfigure(0, weight=1)
         
         info_f = ctk.CTkFrame(card, fg_color="transparent")
-        info_f.grid(row=0, column=0, sticky="nsew", padx=15, pady=10)
+        info_f.grid(row=0, column=0, sticky="nsew", padx=15, pady=15)
+        
+        header_f = ctk.CTkFrame(info_f, fg_color="transparent")
+        header_f.pack(fill="x")
         
         ctk.CTkLabel(
-            info_f, text=info["title"], font=("Segoe UI", 14, "bold"), anchor="w"
-        ).pack(fill="x")
+            header_f, text="▶ " + info["title"], font=("Segoe UI", 16, "bold"), anchor="w", text_color="#3498db"
+        ).pack(side="left", fill="x", expand=True)
         
+        client_badge = ctk.CTkFrame(header_f, fg_color=("#f0f0f0", "#2a2a2a"), corner_radius=4)
+        client_badge.pack(side="right", padx=5)
+        ctk.CTkLabel(
+            client_badge, text=f"📺 {info['client']}", font=("Segoe UI", 10, "bold"), text_color="gray"
+        ).pack(padx=8, pady=2)
+
         ctk.CTkLabel(
             info_f,
-            text=f"User: {info['user']} • Client: {info['client']}",
-            font=("Segoe UI", 11),
-            text_color="#3498db",
+            text=f"👤 {info['user']}",
+            font=("Segoe UI", 12),
+            text_color="gray",
             anchor="w",
-        ).pack(fill="x")
+        ).pack(fill="x", pady=(2, 8))
 
-        # Playback Controls for all sessions
-        ctrl_f = ctk.CTkFrame(info_f, fg_color="transparent")
-        ctrl_f.pack(fill="x", pady=(8, 0))
+        ctrl_f = ctk.CTkFrame(info_f, fg_color=("#f8f9fa", "#151515"), corner_radius=6)
+        ctrl_f.pack(fill="x", pady=(5, 0), ipady=5, ipadx=5)
         
-        btn_style = {"width": 35, "height": 30, "font": ("Segoe UI", 12, "bold")}
+        btn_style = {"width": 35, "height": 30, "font": ("Segoe UI", 12, "bold"), "corner_radius": 4}
         
         ctk.CTkButton(
-            ctrl_f, text="⏯", **btn_style,
+            ctrl_f, text="⏯", **btn_style, fg_color="#3498db", hover_color="#2980b9",
             command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "PlayPause"))
-        ).pack(side="left", padx=2)
+        ).pack(side="left", padx=3)
         
         ctk.CTkButton(
             ctrl_f, text="⏹", **btn_style, fg_color="#e74c3c", hover_color="#c0392b",
             command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "Stop"))
-        ).pack(side="left", padx=2)
+        ).pack(side="left", padx=3)
+
+        sep = ctk.CTkFrame(ctrl_f, width=2, height=20, fg_color=("#d0d0d0", "#333333"))
+        sep.pack(side="left", padx=8, pady=5)
+
+        ctk.CTkButton(
+            ctrl_f, text="⏪ 10s", width=60, height=30, font=("Segoe UI", 11, "bold"), corner_radius=4,
+            fg_color=("#e0e0e0", "#333333"), text_color=("#000000", "#ffffff"), hover_color=("#d0d0d0", "#444444"),
+            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.seek_relative(s, -10))
+        ).pack(side="left", padx=3)
+
+        ctk.CTkButton(
+            ctrl_f, text="10s ⏩", width=60, height=30, font=("Segoe UI", 11, "bold"), corner_radius=4,
+            fg_color=("#e0e0e0", "#333333"), text_color=("#000000", "#ffffff"), hover_color=("#d0d0d0", "#444444"),
+            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.seek_relative(s, 10))
+        ).pack(side="left", padx=3)
         
-        ctk.CTkLabel(ctrl_f, text=" Vol: ", font=("Segoe UI", 11)).pack(side="left", padx=(10, 0))
+        sep2 = ctk.CTkFrame(ctrl_f, width=2, height=20, fg_color=("#d0d0d0", "#333333"))
+        sep2.pack(side="left", padx=8, pady=5)
+
+        ctk.CTkLabel(ctrl_f, text="🔊", font=("Segoe UI", 14)).pack(side="left", padx=(5, 2))
         
         ctk.CTkButton(
-            ctrl_f, text="-", width=25, height=30,
+            ctrl_f, text="-", width=30, height=30, corner_radius=4, font=("Segoe UI", 14, "bold"),
+            fg_color="transparent", border_width=1, border_color=("#d0d0d0", "#444444"), text_color=("#333", "#ccc"),
             command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeDown"))
         ).pack(side="left", padx=2)
         
         ctk.CTkButton(
-            ctrl_f, text="+", width=25, height=30,
+            ctrl_f, text="+", width=30, height=30, corner_radius=4, font=("Segoe UI", 14, "bold"),
+            fg_color="transparent", border_width=1, border_color=("#d0d0d0", "#444444"), text_color=("#333", "#ccc"),
             command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeUp"))
         ).pack(side="left", padx=2)
 
         btn_f = ctk.CTkFrame(card, fg_color="transparent")
-        btn_f.grid(row=0, column=1, padx=15)
+        btn_f.grid(row=0, column=1, padx=15, pady=15, sticky="e")
         
         ctk.CTkButton(
             btn_f,
-            text="Kill Now",
-            width=80,
-            height=28,
-            fg_color="#e74c3c",
-            hover_color="#c0392b",
+            text="DETAILS",
+            width=100,
+            height=35,
+            fg_color="#3498db",
+            hover_color="#2980b9",
+            text_color="white",
+            font=("Segoe UI", 11, "bold"),
+            command=lambda s=sid, i=info: self.open_stream_details(s, i),
+        ).pack(pady=4)
+
+        ctk.CTkButton(
+            btn_f,
+            text="KILL STREAM",
+            width=100,
+            height=35,
+            fg_color="transparent",
+            border_width=2,
+            border_color="#e74c3c",
+            text_color="#e74c3c",
+            hover_color=("#ffebec", "#2d1a1a"),
             font=("Segoe UI", 11, "bold"),
             command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.kill_session(s)),
-        ).pack(side="left", padx=5)
+        ).pack(pady=4)
         
         if not is_managed:
             ctk.CTkButton(
                 btn_f,
-                text="5m Warning & Kill",
-                width=130,
-                height=28,
-                fg_color="#e67e22",
-                hover_color="#d35400",
+                text="⚠️ 5m WARNING",
+                width=100,
+                height=35,
+                fg_color="transparent",
+                border_width=2,
+                border_color="#e67e22",
+                text_color="#e67e22",
+                hover_color=("#fff3e0", "#2d2011"),
                 font=("Segoe UI", 11, "bold"),
                 command=lambda s=sid: self.app.run_async(
                     self.app.jellyfin_api.timed_kill(
                         s, 5, "Admin: This stream will be terminated in 5 minutes for maintenance."
                     )
                 ),
-            ).pack(side="left", padx=5)
+            ).pack(pady=4)
+
+    def open_stream_details(self, sid, info):
+        StreamDetailsWindow(self.app, sid, info)
 
     def refresh_ui(self):
         status_text = self.app.lbl_jelly_info.cget("text")
@@ -921,3 +872,128 @@ class JellyfinDashboard(ctk.CTkToplevel):
             self.storage_prog.configure(progress_color="#f39c12")
         else:
             self.storage_prog.configure(progress_color="#3498db")
+
+
+class StreamDetailsWindow(ctk.CTkToplevel):
+    def __init__(self, app, sid, info):
+        super().__init__(app)
+        self.app = app
+        self.sid = sid
+        self.title(f"Stream Details - {info['user']}")
+        self.geometry("500x750")
+        self.attributes("-topmost", True)
+        self.resizable(False, False)
+
+        self.session = info.get("session_data", {})
+        self.item = self.session.get("NowPlayingItem", {})
+        self.play_state = self.session.get("PlayState", {})
+        self.trans_info = self.session.get("TranscodingInfo", {}) or {}
+
+        self.setup_ui()
+
+    def format_ticks(self, ticks):
+        if not ticks: return "00:00:00"
+        seconds = int(ticks / 10000000)
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        s = seconds % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    def setup_ui(self):
+        self.grid_columnconfigure(0, weight=1)
+        
+        header = ctk.CTkFrame(self, fg_color="#3498db", corner_radius=0, height=80)
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_propagate(False)
+        
+        ctk.CTkLabel(
+            header, text="STREAM DETAILS", font=("Segoe UI", 20, "bold"), text_color="white"
+        ).pack(pady=25)
+
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=20)
+        self.grid_rowconfigure(1, weight=1)
+        scroll.grid_columnconfigure(0, weight=1)
+
+        prog_f = self.create_section(scroll, "PLAYBACK PROGRESS")
+        
+        pos_ticks = self.play_state.get("PositionTicks", 0)
+        dur_ticks = self.item.get("RunTimeTicks", 0)
+        
+        percent = (pos_ticks / dur_ticks) if dur_ticks > 0 else 0
+        
+        self.prog_bar = ctk.CTkProgressBar(prog_f, height=12, progress_color="#3498db")
+        self.prog_bar.pack(fill="x", pady=(10, 5))
+        self.prog_bar.set(percent)
+        
+        time_text = f"{self.format_ticks(pos_ticks)} / {self.format_ticks(dur_ticks)}"
+        ctk.CTkLabel(prog_f, text=time_text, font=("Consolas", 14, "bold")).pack()
+
+        qual_f = self.create_section(scroll, "STREAM QUALITY & TRANSCODING")
+        
+        method = self.play_state.get("PlayMethod", "DirectPlay")
+        method_color = "#2ecc71" if method == "DirectPlay" else "#e67e22"
+        
+        ctk.CTkLabel(qual_f, text=f"Method: {method}", font=("Segoe UI", 13, "bold"), text_color=method_color).pack(anchor="w")
+        
+        if method == "Transcode":
+            v_codec = self.trans_info.get("VideoCodec", "Unknown")
+            a_codec = self.trans_info.get("AudioCodec", "Unknown")
+            reason = self.trans_info.get("TranscodeReasons", ["Unknown Reason"])
+            
+            ctk.CTkLabel(qual_f, text=f"Video: {v_codec} • Audio: {a_codec}", font=("Segoe UI", 12)).pack(anchor="w")
+            ctk.CTkLabel(qual_f, text=f"Reason: {', '.join(reason)}", font=("Segoe UI", 11), text_color="gray", wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
+        else:
+            ctk.CTkLabel(qual_f, text="Direct streaming - No transcoding active.", font=("Segoe UI", 11), text_color="gray").pack(anchor="w")
+
+        band_f = self.create_section(scroll, "BANDWIDTH MONITOR")
+        bitrate = self.trans_info.get("Bitrate")
+        if not bitrate and dur_ticks > 0:
+            bitrate_text = "N/A (Direct Play)"
+        else:
+            bitrate_text = f"{round(bitrate/1000000, 2)} Mbps" if bitrate else "Unknown"
+        
+        ctk.CTkLabel(band_f, text=f"Current Bitrate: {bitrate_text}", font=("Segoe UI", 13, "bold")).pack(anchor="w")
+
+        meta_f = self.create_section(scroll, "NOW PLAYING METADATA")
+        
+        res = f"{self.item.get('Width', '?')}x{self.item.get('Height', '?')}"
+        fps = self.item.get("FramesPerSecond", "?")
+        
+        ctk.CTkLabel(meta_f, text=f"Resolution: {res}", font=("Segoe UI", 12)).pack(anchor="w")
+        ctk.CTkLabel(meta_f, text=f"Frame Rate: {fps} fps", font=("Segoe UI", 12)).pack(anchor="w")
+        ctk.CTkLabel(meta_f, text=f"Type: {self.item.get('Type')}", font=("Segoe UI", 12)).pack(anchor="w")
+        
+        path = self.item.get("Path", "Unknown")
+        ctk.CTkLabel(meta_f, text=f"File: {path}", font=("Consolas", 10), text_color="gray", wraplength=420, justify="left").pack(anchor="w", pady=(5, 0))
+
+        msg_f = self.create_section(scroll, "REMOTE MESSAGE BROADCAST")
+        
+        self.msg_entry = ctk.CTkEntry(msg_f, placeholder_text="Type message to user...", height=35)
+        self.msg_entry.pack(fill="x", pady=5)
+        
+        ctk.CTkButton(
+            msg_f, text="SEND ALERT TO PLAYER", fg_color="#3498db", hover_color="#2980b9",
+            command=self.send_custom_message
+        ).pack(fill="x", pady=(5, 0))
+
+        ctk.CTkButton(
+            self, text="CLOSE DETAILS", height=40, fg_color="transparent", border_width=1,
+            command=self.destroy
+        ).grid(row=2, column=0, pady=(0, 20), padx=20, sticky="ew")
+
+    def create_section(self, parent, title):
+        f = ctk.CTkFrame(parent, fg_color=("#f9f9f9", "#151515"), corner_radius=8)
+        f.pack(fill="x", pady=10, padx=5, ipady=10, ipadx=10)
+        ctk.CTkLabel(f, text=title, font=("Segoe UI", 11, "bold"), text_color="#3498db").pack(anchor="w", pady=(0, 5))
+        return f
+
+    def send_custom_message(self):
+        text = self.msg_entry.get().strip()
+        if not text: return
+        
+        self.app.run_async(
+            self.app.jellyfin_api.send_message_to_session(self.sid, "Server Admin", text)
+        )
+        self.msg_entry.delete(0, 'end')
+        messagebox.showinfo("Sent", "Message broadcasted to the session.", parent=self)

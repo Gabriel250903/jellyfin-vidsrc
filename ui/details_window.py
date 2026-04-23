@@ -189,11 +189,13 @@ class DetailsWindow(ctk.CTkToplevel):
             self._add_section_header("SEASONS")
             self.season_scroll = ctk.CTkScrollableFrame(
                 self.info_scroll,
-                height=40,
+                height=65,
                 orientation="horizontal",
-                fg_color="transparent",
+                fg_color=("#ebebeb", "#151515"),
+                corner_radius=8
             )
             self.season_scroll.pack(fill="x", pady=(0, 10))
+            self._make_drag_scrollable(self.season_scroll)
 
             self.episodes_frame = ctk.CTkScrollableFrame(
                 self.info_scroll,
@@ -202,6 +204,7 @@ class DetailsWindow(ctk.CTkToplevel):
                 corner_radius=8,
             )
             self.episodes_frame.pack(fill="x", pady=(10, 25), padx=5)
+            self._make_drag_scrollable(self.episodes_frame)
             self.lbl_episodes_status = ctk.CTkLabel(
                 self.episodes_frame,
                 text="Select a season",
@@ -225,8 +228,23 @@ class DetailsWindow(ctk.CTkToplevel):
             fg_color="transparent",
         )
         self.similar_scroll.pack(fill="x", pady=(0, 20))
+        self._make_drag_scrollable(self.similar_scroll)
 
         self._load_data()
+
+    def _make_drag_scrollable(self, scroll_frame):
+        canvas = scroll_frame._parent_canvas
+        
+        def on_press(event):
+            canvas.scan_mark(event.x, event.y)
+            
+        def on_drag(event):
+            canvas.scan_dragto(event.x, event.y, gain=1)
+            
+        canvas.bind("<Button-1>", on_press, add="+")
+        canvas.bind("<B1-Motion>", on_drag, add="+")
+        scroll_frame.bind("<Button-1>", on_press, add="+")
+        scroll_frame.bind("<B1-Motion>", on_drag, add="+")
 
     def _add_section_header(self, text):
         ctk.CTkLabel(
@@ -428,7 +446,7 @@ class DetailsWindow(ctk.CTkToplevel):
                                 l.configure(
                                     image=ctk.CTkImage(img, img, (100, 150)), text=""
                                 )
-                                if img
+                                if img and l.winfo_exists()
                                 else None
                             ),
                         ),

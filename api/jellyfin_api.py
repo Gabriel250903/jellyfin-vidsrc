@@ -352,148 +352,38 @@ class JellyfinAPI:
         except Exception as e:
             events.emit("log", f"JELLYFIN ERROR: timed_kill failed: {e}")
 
-    async def execute_policies(
-        self,
-        target_user=None,
-        target_free_gb=50,
-        global_watch=False,
-        protect_collections=True,
-        on_progress=None,
-        on_complete=None,
-    ):
-        url_base = self._get_url()
-        api_key = self._get_api_key()
-        if not url_base or not api_key:
+    async def seek_relative(self, session_id, seconds):
+        if hasattr(self, "_seeking") and self._seeking:
             return
-
-        target_user = target_user or self._get_managed_user()
-
+        self._seeking = True
         try:
-            session = await self._get_session()
-            headers = {"X-Emby-Token": api_key}
-            timeout = aiohttp.ClientTimeout(total=15)
-
-            events.emit(
-                "log",
-                f"CLEANUP: Starting policies (User: {target_user or 'Global'}, GlobalWatch: {global_watch}, ProtectCollections: {protect_collections}, Target: {target_free_gb}GB)",
-            )
-
-            # 1. Get all users
-            async with session.get(
-                f"{url_base}/Users", headers=headers, timeout=timeout, ssl=False
-            ) as res:
-                users = await res.json()
-            
-            if not users:
-                events.emit("log", "CLEANUP ERROR: No users found.")
-                if on_complete: events.emit("api_callback", on_complete)
+            url_base = self._get_url()
+            api_key = self._get_api_key()
+            if not url_base or not api_key:
                 return
 
-            # 2. Build map of watched status for all items
-            watched_items = {}  # item_id -> { item_data, watched_by_count }
-            
-            for user in users:
-                u_id = user["Id"]
-                u_name = user["Name"]
-                
-                params = {
-                    "Recursive": "true",
-                    "Filters": "IsPlayed",
-                    "IncludeItemTypes": "Movie,Episode",
-                    "Fields": "Path,DateCreated,CollectionIds",
-                }
-                async with session.get(
-                    f"{url_base}/Users/{u_id}/Items",
-                    headers=headers,
-                    params=params,
-                    timeout=timeout,
-                    ssl=False,
-                ) as res:
+            headers = {"X-Emby-Token": api_key}
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(trust_env=False) as session:
+                async with session.get(f"{url_base}/Sessions", headers=headers, timeout=timeout, ssl=False) as res:
                     if res.status == 200:
-                        items = (await res.json()).get("Items", [])
-                        for item in items:
-                            i_id = item["Id"]
-                            if i_id not in watched_items:
-                                watched_items[i_id] = {
-                                    "item": item,
-                                    "watched_by": set()
-                                }
-                            watched_items[i_id]["watched_by"].add(u_name)
+                        sessions = await res.json()
+                        target = next((s for s in sessions if s.get("Id") == session_id), None)
+                        if not target: return
 
-            # 3. Identify candidates for deletion based on policies
-            candidates = []
-            for i_id, data in watched_items.items():
-                item = data["item"]
-                watched_by = data["watched_by"]
-                
-                # Check Global Watch policy
-                if global_watch:
-                    if len(watched_by) < len(users):
-                        continue
-                elif target_user:
-                    if target_user.lower() not in [u.lower() for u in watched_by]:
-                        continue
-                
-                # Check Collection Protection
-                if protect_collections:
-                    if item.get("CollectionIds"): # Usually returned as a list of IDs if in collections
-                        continue
-                
-                candidates.append(item)
+                        curr_ticks = target.get("PlayState", {}).get("PositionTicks", 0)
+                        new_pos = max(0, curr_ticks + (seconds * 10000000))
 
-            # 4. First pass: delete items that match the user/global policy
-            if candidates:
-                events.emit(
-                    "log",
-                    f"CLEANUP: Found {len(candidates)} items matching retention criteria.",
-                )
-                # Sort candidates by DateCreated (oldest first)
-                candidates.sort(key=lambda x: x.get("DateCreated", ""))
-                
-                # Deleting items matching criteria
-                # If target_user was specified and global_watch is false, we delete them all
-                # But if we are just doing it for space, we might be more selective.
-                # Here we follow the previous logic: if target_user is set, we delete them.
-                if target_user or global_watch:
-                    await self.delete_items_batch(candidates, on_progress=on_progress)
-
-            # 5. Second pass: Low space check
-            async with session.get(
-                f"{url_base}/System/Info/Storage", headers=headers, timeout=timeout, ssl=False
-            ) as res:
-                storage = await res.json()
-                free = sum(
-                    f.get("FreeSpace", 0)
-                    for l in storage.get("Libraries", [])
-                    for f in l.get("Folders", [])
-                ) / (1024**3)
-
-            if free < target_free_gb:
-                events.emit(
-                    "log",
-                    f"CLEANUP: Space still low ({free:.1f}GB). Target: {target_free_gb}GB. Checking for more candidates...",
-                )
-                
-                # If we still need space, we might have already deleted candidates.
-                # We need to refresh the free space check or just continue.
-                # The candidates list was already filtered by policies.
-                
-                # If we need MORE space and we've already deleted 'candidates', 
-                # we might need to look for items that weren't in 'candidates' 
-                # (e.g. if we only looked at target_user before).
-                # But following the "surgical" request, we should probably stick to the policies.
-                
-                # Let's re-calculate free space after batch delete if needed.
-                pass
-
-            events.emit("log", "CLEANUP: Policies executed successfully.")
-            if on_complete:
-                events.emit("api_callback", on_complete)
-
+                        seek_url = f"{url_base}/Sessions/{session_id}/Playing/Seek?seekPositionTicks={int(new_pos)}"
+                        async with session.post(seek_url, headers=headers, timeout=timeout, ssl=False) as seek_res:
+                            if seek_res.status < 300:
+                                await asyncio.sleep(0.5)
+                                return True
         except Exception as e:
-            events.emit("log", f"JELLYFIN ERROR: execute_policies failed: {e}")
-            if on_complete:
-                events.emit("api_callback", on_complete)
+            events.emit("log", f"JELLYFIN ERROR: Seek failed: {e}")
+        finally:
+            self._seeking = False
+        return False
 
     async def update_status(self):
         url_base = self._get_url()
@@ -561,13 +451,18 @@ class JellyfinAPI:
                     curr = {}
                     for s in active:
                         item = s["NowPlayingItem"]
-                        name = item.get("Name")
+                        name = item.get("Name", "Unknown Item")
                         if item.get("Type") == "Episode":
-                            name = f"{item.get('SeriesName')} - S{str(item.get('ParentIndexNumber')).zfill(2)}E{str(item.get('IndexNumber')).zfill(2)}"
+                            series_name = item.get("SeriesName", "Unknown Series")
+                            s_num = str(item.get("ParentIndexNumber", 0)).zfill(2)
+                            e_num = str(item.get("IndexNumber", 0)).zfill(2)
+                            name = f"{series_name} - S{s_num}E{e_num}"
+                        
                         curr[s["Id"]] = {
-                            "user": s.get("UserName"),
+                            "user": s.get("UserName") or "System/TV",
                             "title": name,
-                            "client": s.get("Client"),
+                            "client": s.get("Client") or "Unknown Client",
+                            "session_data": s,
                         }
 
                     events.emit("jellyfin_sessions_update", curr)
@@ -584,6 +479,34 @@ class JellyfinAPI:
             if self._last_status_error != err_msg:
                 events.emit("log", f"JELLYFIN STATUS CRITICAL ERROR: {e}")
                 self._last_status_error = err_msg
+
+    async def send_message_to_session(self, session_id, header, text):
+        url_base = self._get_url()
+        api_key = self._get_api_key()
+        if not url_base or not api_key:
+            return
+
+        try:
+            headers = {
+                "X-Emby-Token": api_key,
+                "Content-Type": "application/json",
+            }
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(trust_env=False) as session:
+                async with session.post(
+                    f"{url_base}/Sessions/{session_id}/Message",
+                    headers=headers,
+                    json={
+                        "Header": header,
+                        "Text": text,
+                        "TimeoutMs": 5000,
+                    },
+                    timeout=timeout,
+                    ssl=False,
+                ) as res:
+                    return res.status < 300
+        except:
+            return False
 
     async def fetch_watched_content(self, on_success):
         url_base = self._get_url()
@@ -797,7 +720,7 @@ class JellyfinAPI:
                                 data = msg.json()
                                 msg_type = data.get("MessageType")
                                 
-                                if msg_type in ["Sessions", "PlaybackStart", "PlaybackStop", "UserDataChanged", "LibraryChanged"]:
+                                if msg_type in ["Sessions", "PlaybackStart", "PlaybackStop", "SessionStart", "SessionEnded", "UserDataChanged", "LibraryChanged"]:
                                     await self.update_status()
                             elif msg.type in [aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR]:
                                 break

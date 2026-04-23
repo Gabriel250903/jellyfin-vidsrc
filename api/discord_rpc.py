@@ -156,7 +156,8 @@ class DiscordRPCManager:
         for s in sessions:
             if s.get("NowPlayingItem"):
                 if rpc_target_user:
-                    if s.get("UserName", "").lower() == rpc_target_user.lower():
+                    session_user = s.get("UserName")
+                    if session_user and session_user.lower() == rpc_target_user.lower():
                         target_session = s
                         break
                 else:
@@ -164,12 +165,15 @@ class DiscordRPCManager:
                     break
 
         if not target_session:
-            await self.presence.clear()
+            if self.presence:
+                await self.presence.clear()
             self.last_item_id = None
+            self.last_play_state = None
             return
 
         item = target_session.get("NowPlayingItem", {})
         play_state = target_session.get("PlayState", {})
+        client_name = target_session.get("Client", "Unknown")
 
         is_paused = play_state.get("IsPaused", False)
         item_id = item.get("Id")
@@ -205,7 +209,8 @@ class DiscordRPCManager:
             server_name = jellyfin_url.split("//")[-1].split(":")[0]
             buttons.append({"label": f"Server: {server_name}", "url": jellyfin_url})
 
-        current_play_state = (item_id, is_paused)
+        # Detect state changes including device switches
+        current_play_state = (item_id, is_paused, client_name)
         if current_play_state != self.last_play_state:
             self.last_play_state = current_play_state
 
