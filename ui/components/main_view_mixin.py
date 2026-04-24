@@ -643,24 +643,26 @@ class MainViewMixin:
                 return
 
             t["stat"].configure(text=status.upper())
-            if status == "FINISHED":
+            
+            final_states = ["FINISHED", "NOT FOUND", "ALREADY FOUND", "SKIPPED", "CANCELED", "FAILED"]
+            
+            if status in final_states:
                 if not t.get("done"):
                     t["done"] = True
-                    t["stat"].configure(text_color="#2ecc71")
-                t["progress_val"] = 1.0
-                t["prog"].set(1.0)
-            elif status == "NOT FOUND":
-                if not t.get("done"):
-                    t["done"] = True
-                    t["stat"].configure(text_color="#e74c3c")
-                t["progress_val"] = 1.0
-                t["prog"].set(1.0)
-            elif status == "ALREADY FOUND":
-                if not t.get("done"):
-                    t["done"] = True
-                    t["stat"].configure(text_color="#f1c40f")
-                t["progress_val"] = 1.0
-                t["prog"].set(1.0)
+                    
+                    if status == "FINISHED":
+                        t["stat"].configure(text_color="#2ecc71")
+                    elif status == "ALREADY FOUND":
+                        t["stat"].configure(text_color="#f1c40f")
+                    elif status in ["NOT FOUND", "SKIPPED"]:
+                        t["stat"].configure(text_color="#e67e22")
+                    elif status in ["CANCELED", "FAILED"]:
+                        t["stat"].configure(text_color="#e74c3c")
+                
+                if status not in ["CANCELED", "FAILED"]:
+                    t["progress_val"] = 1.0
+                    t["prog"].set(1.0)
+                    
             elif progress is not None:
                 t["progress_val"] = progress
                 t["prog"].set(progress)

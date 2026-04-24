@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 import re
 from selenium.webdriver.edge.webdriver import WebDriver as EdgeDriver
@@ -291,16 +292,18 @@ class VidSrcScraper:
 
             if not nav_success:
                 events.emit("log", f"SCRAPER: Failed to load page for {display_name}")
+                events.emit("task_status_update", task_id, "FAILED")
                 return False
 
         except Exception as e:
             if not self.controller.stop_event.is_set():
                 events.emit("log", f"SCRAPER: Navigation critical error for {display_name}: {e}")
+                events.emit("task_status_update", task_id, "FAILED")
             return False
 
         try:
             if self.check_no_links(task_id, display_name):
-                events.emit("task_status_update", task_id, "SKIPPED")
+                events.emit("task_status_update", task_id, "NOT FOUND")
                 return True
 
             success = False
@@ -383,48 +386,33 @@ class VidSrcScraper:
                     if sub_only and sub_clicked:
                         started = True
                     else:
-                        for _ in range(40):
+                        for _ in range(60):
                             if self.controller.stop_event.is_set():
                                 break
                             current_files = os.listdir(folder)
 
-                            post_count = len(
-                                [f for f in current_files if f.endswith(".crdownload")]
-                            )
+                            cr_files = [f for f in current_files if f.endswith(".crdownload")]
 
-                            found_specific = False
+                            found_video_temp = False
+                            
                             if pattern:
-                                for f in current_files:
-                                    if re.search(pattern, f, re.I) and f.endswith(
-                                        ".crdownload"
-                                    ):
-                                        found_specific = True
+                                for f in cr_files:
+                                    if re.search(pattern, f, re.I):
+                                        found_video_temp = True
                                         found_filename = f.replace(".crdownload", "")
                                         break
+                            
+                            if not found_video_temp and not sub_only:
+                                for f in cr_files:
+                                    found_video_temp = True
+                                    found_filename = f.replace(".crdownload", "")
+                                    break
 
-                            if (
-                                found_specific or post_count > pre_count
-                            ) and not found_filename:
-                                cr_files = [
-                                    f
-                                    for f in current_files
-                                    if f.endswith(".crdownload")
-                                ]
-                                if cr_files:
-                                    cr_files.sort(
-                                        key=lambda x: os.path.getmtime(
-                                            os.path.join(folder, x)
-                                        ),
-                                        reverse=True,
-                                    )
-                                    found_filename = cr_files[0].replace(
-                                        ".crdownload", ""
-                                    )
-
-                            if found_specific or post_count > pre_count:
-                                time.sleep(1)
+                            if found_video_temp:
+                                time.sleep(1.5)
                                 started = True
                                 break
+                            
                             time.sleep(0.5)
 
                     if started:
@@ -439,23 +427,34 @@ class VidSrcScraper:
                         time.sleep(1.5)
                         break
                 except Exception as e:
+                    if self.controller.stop_event.is_set():
+                        break
                     events.emit(
                         "log", f"SCRAPER: Attempt {attempt+1} failed for {display_name}: {e}"
                     )
-                    driver.refresh()
+                    try:
+                        if self.driver:
+                            driver.refresh()
+                    except:
+                        pass
                     time.sleep(4)
 
-            if not success:
-                self.controller.failed_tasks.append(
-                    (folder, tid, type_m, s, ep, quality, sub_only, video_only)
-                )
+            if not success and not self.controller.stop_event.is_set():
+                tid_thread = threading.get_ident()
+                if tid_thread in self.controller.failed_tasks:
+                    self.controller.failed_tasks[tid_thread].append(
+                        (folder, tid, type_m, s, ep, quality, sub_only, video_only)
+                    )
             return success
 
         except Exception as e:
-            events.emit("log", f"SCRAPER CRITICAL ERROR for {display_name}: {e}")
-            self.controller.failed_tasks.append(
-                (folder, tid, type_m, s, ep, quality, sub_only, video_only)
-            )
+            if not self.controller.stop_event.is_set():
+                events.emit("log", f"SCRAPER CRITICAL ERROR for {display_name}: {e}")
+                tid_thread = threading.get_ident()
+                if tid_thread in self.controller.failed_tasks:
+                    self.controller.failed_tasks[tid_thread].append(
+                        (folder, tid, type_m, s, ep, quality, sub_only, video_only)
+                    )
             return False
 
     def trigger_downloads(

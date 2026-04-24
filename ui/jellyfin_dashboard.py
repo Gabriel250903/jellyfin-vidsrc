@@ -87,6 +87,9 @@ class JellyfinDashboard(ctk.CTkToplevel):
         self.tab_gaps = self.tabview.add("Missing Episodes")
         self.tab_watched = self.tabview.add("Cleanup")
 
+        self.tab_streams.grid_columnconfigure(0, weight=1)
+        self.tab_streams.grid_rowconfigure(0, weight=1)
+
         self.streams_scroll = ctk.CTkScrollableFrame(
             self.tab_streams, fg_color="transparent"
         )

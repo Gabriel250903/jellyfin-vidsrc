@@ -35,7 +35,7 @@ class RPCSettingsWindow(ctk.CTkToplevel):
         self.switch_rpc.pack(pady=10, padx=20, anchor="w")
 
         ctk.CTkLabel(
-            self.scroll, text="Client ID (Optional):", font=("Segoe UI", 12, "bold")
+            self.scroll, text="Client ID:", font=("Segoe UI", 12, "bold")
         ).pack(pady=(15, 5), padx=20, anchor="w")
         self.client_id_entry = ctk.CTkEntry(
             self.scroll, placeholder_text="Default ID used if empty"

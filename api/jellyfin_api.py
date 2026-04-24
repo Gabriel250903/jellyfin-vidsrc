@@ -472,7 +472,11 @@ class JellyfinAPI:
             events.emit("jellyfin_status_update", {"status": "Offline"})
             err_msg = str(e)
             if self._last_status_error != err_msg:
-                events.emit("log", f"JELLYFIN: Connection lost/failed ({err_msg})")
+                is_starting = "503" in err_msg or "refused" in err_msg.lower() or "10061" in err_msg
+                if is_starting:
+                    events.emit("log", f"JELLYFIN: Waiting for server to be ready... ({err_msg})")
+                else:
+                    events.emit("log", f"JELLYFIN: Connection lost/failed ({err_msg})")
                 self._last_status_error = err_msg
         except Exception as e:
             err_msg = str(e)

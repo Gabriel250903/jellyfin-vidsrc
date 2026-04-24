@@ -82,8 +82,18 @@ class DownloadController:
             pass
 
     def stop_process(self):
-        self.stop_event.set()
         self.log("STOP: Process killed by user. Queue will halt.")
+        self.stop_event.set()
+        
+        if self.queue_manager:
+            with self.queue_manager.lock:
+                self.queue_manager.tasks.clear()
+        
+        if hasattr(self.app, "active_tasks"):
+            for tid in list(self.app.active_tasks.keys()):
+                if not self.app.active_tasks[tid].get("done"):
+                    self.update_task_status(tid, "CANCELED")
+        
         self.current_status = "IDLE"
         events.emit("status_update", "IDLE")
 
@@ -452,6 +462,8 @@ class DownloadController:
                 self.log(
                     f"CONTROLLER: No active downloads detected in {folder_name} after 30s."
                 )
+                if os.path.basename(os.path.dirname(folder)) == "Movies" or "Season" not in folder_name:
+                    events.emit("task_status_update", "MOVIE", "FAILED")
             return
 
         consecutive_empty = 0
