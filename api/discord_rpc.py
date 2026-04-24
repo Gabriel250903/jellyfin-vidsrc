@@ -209,7 +209,6 @@ class DiscordRPCManager:
             server_name = jellyfin_url.split("//")[-1].split(":")[0]
             buttons.append({"label": f"Server: {server_name}", "url": jellyfin_url})
 
-        # Detect state changes including device switches
         current_play_state = (item_id, is_paused, client_name)
         if current_play_state != self.last_play_state:
             self.last_play_state = current_play_state

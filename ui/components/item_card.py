@@ -12,6 +12,7 @@ class ItemCard(ctk.CTkFrame):
         self.app = app
         self.item_data = None
         self.cat = None
+        self._img_ref = None
 
         self.img_label = ctk.CTkLabel(
             self,
@@ -96,20 +97,21 @@ class ItemCard(ctk.CTkFrame):
         )
 
         if not ctk_poster and p_path:
-            self.app.run_async(
-                self.app.tmdb_api.get_poster_image(p_path, size=(160, 240)),
-                lambda img: self.app.after(
-                    0,
-                    lambda: (
+            def _on_item_poster_loaded(img):
+                if img and self.winfo_exists():
+                    try:
+                        new_img = ctk.CTkImage(img, img, (160, 240))
+                        self._img_ref = new_img
                         self.img_label.configure(
-                            image=ctk.CTkImage(img, img, (160, 240)),
+                            image=new_img,
                             text="",
                             fg_color="transparent",
                         )
-                        if img and self.winfo_exists()
-                        else None
-                    ),
-                ),
+                    except Exception:
+                        pass
+            self.app.run_async(
+                self.app.tmdb_api.get_poster_image(p_path, size=(160, 240)),
+                _on_item_poster_loaded
             )
 
         if rating > 0:

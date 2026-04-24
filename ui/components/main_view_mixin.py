@@ -42,16 +42,43 @@ class MainViewMixin:
             if poster_path:
 
                 def _on_loaded(img):
-                    if img and self.selected_tid == tid:
-                        new_img = ctk.CTkImage(
-                            light_image=img, dark_image=img, size=(240, 340)
-                        )
-                        self.poster_label.configure(
-                            image=new_img,
-                            text="",
-                            fg_color="transparent",
-                        )
-                        self.current_poster_ptr = new_img
+                    if not img:
+                        return
+
+                    def _do_config():
+                        try:
+                            if self.selected_tid != tid or not self.poster_label.winfo_exists():
+                                return
+
+                            new_img = ctk.CTkImage(
+                                light_image=img, dark_image=img, size=(240, 340)
+                            )
+                            
+                            if not hasattr(self, "_img_buffer"):
+                                self._img_buffer = []
+                            
+                            if hasattr(self, "current_poster_ptr") and self.current_poster_ptr:
+                                self._img_buffer.append(self.current_poster_ptr)
+                                if len(self._img_buffer) > 5:
+                                    self._img_buffer.pop(0)
+
+                            self.current_poster_ptr = new_img
+                            self.poster_label.configure(
+                                image=new_img,
+                                text=" ",
+                                text_color=self.poster_label.cget("fg_color"),
+                                compound="center"
+                            )
+                            try:
+                                if hasattr(self.poster_label, "_label"):
+                                    self.poster_label._label.configure(text="", foreground=self.poster_label.cget("fg_color")[1])
+                            except:
+                                pass
+                        except Exception as e:
+                            if "doesn't exist" not in str(e):
+                                self.log(f"UI ERROR: Failed to load poster: {e}")
+
+                    self.after(10, _do_config)
 
                 self.run_async(self.tmdb_api.load_poster(poster_path), _on_loaded)
 
@@ -73,8 +100,8 @@ class MainViewMixin:
                 self.history = self.history[:15]
                 self.render_history()
                 self.save_settings()
-        except:
-            pass
+        except Exception as e:
+            self.log(f"UI ERROR in select_title: {e}")
 
     def get_existing_episodes(self: Any, name, year):
         existing = {}
@@ -957,11 +984,22 @@ class MainViewMixin:
         self.selected_year = None
         self.selected_poster = None
         self.season_data = {}
-        self.current_poster_ptr = None
+        
         try:
-            self.poster_label.configure(image=None, text="No Preview")
-        except:
-            pass
+            if not hasattr(self, "_img_buffer"):
+                self._img_buffer = []
+            
+            if hasattr(self, "current_poster_ptr") and self.current_poster_ptr:
+                self._img_buffer.append(self.current_poster_ptr)
+                if len(self._img_buffer) > 5:
+                    self._img_buffer.pop(0)
+
+            if hasattr(self, "poster_label") and self.poster_label.winfo_exists():
+                self.poster_label.configure(image=None, text="No Preview")
+        except Exception as e:
+            self.log(f"UI ERROR in on_mode_change: {e}")
+            
+        self.current_poster_ptr = None
 
     def open_ep_selector(self: Any):
         try:
