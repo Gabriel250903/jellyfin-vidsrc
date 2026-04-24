@@ -1,30 +1,24 @@
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 import threading
 import time
 import os
 import sys
-import re
 import queue
 import asyncio
-import aiohttp
 import webbrowser
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 REPO = "Gabriel250903/jellyfin-vidsrc"
 
-from core.utils import sanitize_path
 from core.queue_manager import DownloadQueueManager
 from core.download_controller import DownloadController
 from core.event_system import events
 from core.config_manager import config
+from core.updater import Updater
 from api.jellyfin_api import JellyfinAPI
 from api.tmdb_api import TMDBAPI
-from ui.jellyfin_dashboard import JellyfinDashboard
-from ui.rpc_settings import RPCSettingsWindow
-from ui.settings_window import SettingsWindow
 from api.discord_rpc import DiscordRPCManager
-from ui.components.item_card import ItemCard
 from ui.components.sidebar_mixin import SidebarMixin
 from ui.components.main_view_mixin import MainViewMixin
 
@@ -38,6 +32,7 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
         self.minsize(1000, 800)
         ctk.set_appearance_mode("dark")
 
+        self.updater = Updater(VERSION, REPO)
         self.loop = asyncio.new_event_loop()
         self.loop_thread = threading.Thread(target=self._run_async_loop, daemon=True)
         self.loop_thread.start()
@@ -312,72 +307,36 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
         fut.add_done_callback(_task_done)
         return fut
 
-    async def check_for_updates(self):
-        try:
-            async with aiohttp.ClientSession(trust_env=False) as session:
-                url = f"https://api.github.com/repos/{REPO}/releases/latest"
-                async with session.get(
-                    url, timeout=aiohttp.ClientTimeout(total=10)
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        latest_version = data.get("tag_name", "").replace("v", "")
-                        if latest_version and latest_version != VERSION:
-                            html_url = data.get("html_url")
-                            is_frozen = getattr(sys, "frozen", False)
-                            exe_asset = next(
-                                (
-                                    a
-                                    for a in data.get("assets", [])
-                                    if a["name"].endswith(".exe")
-                                ),
-                                None,
-                            )
+    async def check_for_updates(self, silent=True):
+        res = await self.updater.check_for_updates()
+        if res["status"] == "update_available":
+            latest_version = res["version"]
+            html_url = res["html_url"]
+            is_frozen = getattr(sys, "frozen", False)
 
-                            if is_frozen and exe_asset:
-                                self.log(
-                                    f"Updater: Downloading v{latest_version} in background..."
-                                )
-                                download_url = exe_asset["browser_download_url"]
-                                temp_exe = os.path.join(
-                                    os.environ.get("TEMP", "."),
-                                    "jellyfin-vidsrc-update.exe",
-                                )
-
-                                async with session.get(download_url) as file_resp:
-                                    if file_resp.status == 200:
-                                        with open(temp_exe, "wb") as f:
-                                            while True:
-                                                chunk = await file_resp.content.read(
-                                                    1024 * 1024
-                                                )
-                                                if not chunk:
-                                                    break
-                                                f.write(chunk)
-                                        self.after(
-                                            0,
-                                            lambda: self._show_restart_button(
-                                                temp_exe, latest_version
-                                            ),
-                                        )
-                                    else:
-                                        self.after(
-                                            0,
-                                            lambda: self._show_update_dialog(
-                                                latest_version, html_url
-                                            ),
-                                        )
-                            else:
-                                self.after(
-                                    0,
-                                    lambda: self._show_update_dialog(
-                                        latest_version, html_url
-                                    ),
-                                )
-        except Exception as e:
-            self.log(f"Update check failed: {e}")
+            if is_frozen and res["can_auto_update"]:
+                if silent:
+                    self.log(f"Updater: Downloading v{latest_version} in background...")
+                    temp_exe = os.path.join(
+                        os.environ.get("TEMP", "."),
+                        "jellyfin-vidsrc-update.exe",
+                    )
+                    success = await self.updater.download_update(res["download_url"], temp_exe)
+                    if success:
+                        self.after(0, lambda: self._show_restart_button(temp_exe, latest_version))
+                else:
+                    self._show_update_dialog(latest_version, html_url, can_auto=True, download_url=res["download_url"])
+            else:
+                self.after(0, lambda: self._show_update_dialog(latest_version, html_url))
+        elif res["status"] == "up_to_date" and not silent:
+            events.emit("show_info", "Update", "You are already using the latest version!")
+        elif res["status"] == "error" and not silent:
+            events.emit("show_error", "Update Error", res["message"])
 
     def _show_restart_button(self, temp_exe_path, latest_version):
+        if hasattr(self, "btn_update") and self.btn_update.winfo_exists():
+            return
+
         self.btn_update = ctk.CTkButton(
             self.status_bar,
             text=f"RESTART TO UPDATE (v{latest_version})",
@@ -392,33 +351,25 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
         self.log("Updater: Ready to install.")
 
     def _apply_update(self, temp_exe_path):
-        import subprocess
+        if self.updater.apply_update(temp_exe_path):
+            self.on_closing()
+            sys.exit(0)
 
-        current_exe = sys.executable
-        bat_path = os.path.join(
-            os.environ.get("TEMP", "."), "update_jellyfin_vidsrc.bat"
-        )
-
-        with open(bat_path, "w") as f:
-            f.write("@echo off\n")
-            f.write("timeout /t 2 /nobreak >nul\n")
-            f.write(f'move /y "{temp_exe_path}" "{current_exe}"\n')
-            f.write(f'start "" "{current_exe}"\n')
-            f.write(f'del "%~f0"\n')
-
-        subprocess.Popen(bat_path, shell=True)
-        self.on_closing()
-        sys.exit(0)
-
-    def _show_update_dialog(self, latest_version, html_url):
-        if messagebox.askyesno(
-            "Update Available",
-            f"A new version ({latest_version}) is available!\n\n"
-            f"Current version: {VERSION}\n\n"
-            f"Would you like to go to the download page?",
-            parent=self,
-        ):
-            webbrowser.open(html_url)
+    def _show_update_dialog(self, latest_version, html_url, can_auto=False, download_url=None):
+        msg = f"A new version ({latest_version}) is available!\n\nCurrent version: {VERSION}\n\n"
+        if can_auto:
+            if messagebox.askyesno("Update Available", msg + "Would you like to download and install it now?", parent=self):
+                temp_exe = os.path.join(os.environ.get("TEMP", "."), "jellyfin-vidsrc-update.exe")
+                self.log(f"Updater: Downloading v{latest_version}...")
+                
+                def _on_download_done(success):
+                    if success:
+                        self._apply_update(temp_exe)
+                
+                self.run_async(self.updater.download_update(download_url, temp_exe), _on_download_done)
+        else:
+            if messagebox.askyesno("Update Available", msg + "Would you like to go to the download page?", parent=self):
+                webbrowser.open(html_url)
 
     def on_closing(self):
         if hasattr(self, "discord_rpc") and self.discord_rpc:

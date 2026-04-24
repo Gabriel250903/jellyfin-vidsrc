@@ -175,6 +175,22 @@ class SettingsWindow(ctk.CTkToplevel):
             progress_color="#3498db",
         ).pack(pady=5, padx=20, anchor="w")
 
+        ctk.CTkLabel(
+            self.scroll, text="SYSTEM", font=("Segoe UI", 12, "bold")
+        ).pack(pady=(20, 5), padx=20, anchor="w")
+        
+        from ui.app import VERSION
+        ctk.CTkLabel(self.scroll, text=f"Current Version: v{VERSION}").pack(padx=20, anchor="w")
+        
+        self.btn_check_update = ctk.CTkButton(
+            self.scroll,
+            text="CHECK FOR UPDATES",
+            fg_color="#27ae60",
+            hover_color="#2ecc71",
+            command=lambda: self.parent.run_async(self.parent.check_for_updates(silent=False)),
+        )
+        self.btn_check_update.pack(pady=10, padx=20, fill="x")
+
         self.btn_save = ctk.CTkButton(
             self,
             text="SAVE SETTINGS",
