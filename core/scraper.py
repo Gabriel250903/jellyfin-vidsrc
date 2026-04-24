@@ -297,7 +297,9 @@ class VidSrcScraper:
 
         except Exception as e:
             if not self.controller.stop_event.is_set():
-                events.emit("log", f"SCRAPER: Navigation critical error for {display_name}: {e}")
+                events.emit(
+                    "log", f"SCRAPER: Navigation critical error for {display_name}: {e}"
+                )
                 events.emit("task_status_update", task_id, "FAILED")
             return False
 
@@ -391,17 +393,19 @@ class VidSrcScraper:
                                 break
                             current_files = os.listdir(folder)
 
-                            cr_files = [f for f in current_files if f.endswith(".crdownload")]
+                            cr_files = [
+                                f for f in current_files if f.endswith(".crdownload")
+                            ]
 
                             found_video_temp = False
-                            
+
                             if pattern:
                                 for f in cr_files:
                                     if re.search(pattern, f, re.I):
                                         found_video_temp = True
                                         found_filename = f.replace(".crdownload", "")
                                         break
-                            
+
                             if not found_video_temp and not sub_only:
                                 for f in cr_files:
                                     found_video_temp = True
@@ -412,7 +416,7 @@ class VidSrcScraper:
                                 time.sleep(1.5)
                                 started = True
                                 break
-                            
+
                             time.sleep(0.5)
 
                     if started:
@@ -430,7 +434,8 @@ class VidSrcScraper:
                     if self.controller.stop_event.is_set():
                         break
                     events.emit(
-                        "log", f"SCRAPER: Attempt {attempt+1} failed for {display_name}: {e}"
+                        "log",
+                        f"SCRAPER: Attempt {attempt+1} failed for {display_name}: {e}",
                     )
                     try:
                         if self.driver:

@@ -192,7 +192,7 @@ class DetailsWindow(ctk.CTkToplevel):
                 height=65,
                 orientation="horizontal",
                 fg_color=("#ebebeb", "#151515"),
-                corner_radius=8
+                corner_radius=8,
             )
             self.season_scroll.pack(fill="x", pady=(0, 10))
             self._make_drag_scrollable(self.season_scroll)
@@ -234,13 +234,13 @@ class DetailsWindow(ctk.CTkToplevel):
 
     def _make_drag_scrollable(self, scroll_frame):
         canvas = scroll_frame._parent_canvas
-        
+
         def on_press(event):
             canvas.scan_mark(event.x, event.y)
-            
+
         def on_drag(event):
             canvas.scan_dragto(event.x, event.y, gain=1)
-            
+
         canvas.bind("<Button-1>", on_press, add="+")
         canvas.bind("<B1-Motion>", on_drag, add="+")
         scroll_frame.bind("<Button-1>", on_press, add="+")
@@ -280,7 +280,9 @@ class DetailsWindow(ctk.CTkToplevel):
     def _on_backdrop_loaded(self, img):
         if img and self.winfo_exists():
             img_fitted = ImageOps.fit(img, (1100, 300), Image.Resampling.LANCZOS)
-            self.current_backdrop_ptr = ctk.CTkImage(img_fitted, img_fitted, (1100, 300))
+            self.current_backdrop_ptr = ctk.CTkImage(
+                img_fitted, img_fitted, (1100, 300)
+            )
             self.after(
                 0,
                 lambda: self.backdrop_label.configure(

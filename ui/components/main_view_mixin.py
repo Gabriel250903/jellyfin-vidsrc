@@ -13,6 +13,7 @@ from ui.details_window import DetailsWindow
 
 from typing import List, Any, Optional
 
+
 class MainViewMixin:
     def open_details(self: Any, item_data, cat):
         DetailsWindow(self, item_data, cat)
@@ -47,17 +48,23 @@ class MainViewMixin:
 
                     def _do_config():
                         try:
-                            if self.selected_tid != tid or not self.poster_label.winfo_exists():
+                            if (
+                                self.selected_tid != tid
+                                or not self.poster_label.winfo_exists()
+                            ):
                                 return
 
                             new_img = ctk.CTkImage(
                                 light_image=img, dark_image=img, size=(240, 340)
                             )
-                            
+
                             if not hasattr(self, "_img_buffer"):
                                 self._img_buffer = []
-                            
-                            if hasattr(self, "current_poster_ptr") and self.current_poster_ptr:
+
+                            if (
+                                hasattr(self, "current_poster_ptr")
+                                and self.current_poster_ptr
+                            ):
                                 self._img_buffer.append(self.current_poster_ptr)
                                 if len(self._img_buffer) > 5:
                                     self._img_buffer.pop(0)
@@ -67,11 +74,16 @@ class MainViewMixin:
                                 image=new_img,
                                 text=" ",
                                 text_color=self.poster_label.cget("fg_color"),
-                                compound="center"
+                                compound="center",
                             )
                             try:
                                 if hasattr(self.poster_label, "_label"):
-                                    self.poster_label._label.configure(text="", foreground=self.poster_label.cget("fg_color")[1])
+                                    self.poster_label._label.configure(
+                                        text="",
+                                        foreground=self.poster_label.cget("fg_color")[
+                                            1
+                                        ],
+                                    )
                             except:
                                 pass
                         except Exception as e:
@@ -482,7 +494,9 @@ class MainViewMixin:
 
         if genre_id:
             self.run_async(
-                self.tmdb_api.fetch_discover(cat, page=self.discover_page, genre_id=genre_id),
+                self.tmdb_api.fetch_discover(
+                    cat, page=self.discover_page, genre_id=genre_id
+                ),
                 self._append_discover_results,
             )
         elif self.disc_type.get() == "Trending":
@@ -504,7 +518,7 @@ class MainViewMixin:
 
         def _ui_render():
             columns = self._get_discover_columns()
-            
+
             for i in range(10):
                 self.discover_container.grid_columnconfigure(i, weight=0)
             for i in range(columns):
@@ -554,7 +568,8 @@ class MainViewMixin:
             if self.disc_type.get() == "Trending":
                 self.disc_type.set("Popular")
             self.run_async(
-                self.tmdb_api.fetch_discover(cat, genre_id=genre_id), self._render_discover_first_page
+                self.tmdb_api.fetch_discover(cat, genre_id=genre_id),
+                self._render_discover_first_page,
             )
         elif self.disc_type.get() == "Trending":
             self.run_async(
@@ -564,7 +579,7 @@ class MainViewMixin:
             self.run_async(
                 self.tmdb_api.fetch_popular(cat), self._render_discover_first_page
             )
-        
+
         self._update_genre_dropdown()
 
     def _render_discover_first_page(self: Any, data):
@@ -643,13 +658,20 @@ class MainViewMixin:
                 return
 
             t["stat"].configure(text=status.upper())
-            
-            final_states = ["FINISHED", "NOT FOUND", "ALREADY FOUND", "SKIPPED", "CANCELED", "FAILED"]
-            
+
+            final_states = [
+                "FINISHED",
+                "NOT FOUND",
+                "ALREADY FOUND",
+                "SKIPPED",
+                "CANCELED",
+                "FAILED",
+            ]
+
             if status in final_states:
                 if not t.get("done"):
                     t["done"] = True
-                    
+
                     if status == "FINISHED":
                         t["stat"].configure(text_color="#2ecc71")
                     elif status == "ALREADY FOUND":
@@ -658,11 +680,11 @@ class MainViewMixin:
                         t["stat"].configure(text_color="#e67e22")
                     elif status in ["CANCELED", "FAILED"]:
                         t["stat"].configure(text_color="#e74c3c")
-                
+
                 if status not in ["CANCELED", "FAILED"]:
                     t["progress_val"] = 1.0
                     t["prog"].set(1.0)
-                    
+
             elif progress is not None:
                 t["progress_val"] = progress
                 t["prog"].set(progress)
@@ -986,11 +1008,11 @@ class MainViewMixin:
         self.selected_year = None
         self.selected_poster = None
         self.season_data = {}
-        
+
         try:
             if not hasattr(self, "_img_buffer"):
                 self._img_buffer = []
-            
+
             if hasattr(self, "current_poster_ptr") and self.current_poster_ptr:
                 self._img_buffer.append(self.current_poster_ptr)
                 if len(self._img_buffer) > 5:
@@ -1000,7 +1022,7 @@ class MainViewMixin:
                 self.poster_label.configure(image=None, text="No Preview")
         except Exception as e:
             self.log(f"UI ERROR in on_mode_change: {e}")
-            
+
         self.current_poster_ptr = None
 
     def open_ep_selector(self: Any):

@@ -283,13 +283,13 @@ class JellyfinDashboard(ctk.CTkToplevel):
 
     def _make_drag_scrollable(self, scroll_frame):
         canvas = scroll_frame._parent_canvas
-        
+
         def on_press(event):
             canvas.scan_mark(event.x, event.y)
-            
+
         def on_drag(event):
             canvas.scan_dragto(event.x, event.y, gain=1)
-            
+
         canvas.bind("<Button-1>", on_press, add="+")
         canvas.bind("<B1-Motion>", on_drag, add="+")
         scroll_frame.bind("<Button-1>", on_press, add="+")
@@ -343,15 +343,17 @@ class JellyfinDashboard(ctk.CTkToplevel):
                 hover_color=("#ebebeb", "#2b2b2b"),
                 font=("Segoe UI", 12, "bold"),
                 anchor="w",
-                command=self.clear_show_filter
+                command=self.clear_show_filter,
             )
             back_btn.pack(fill="x", padx=10, pady=(10, 5))
-            
-            show_items = [i for i in items if i.get("SeriesName") == self.current_show_filter]
+
+            show_items = [
+                i for i in items if i.get("SeriesName") == self.current_show_filter
+            ]
             for item in show_items:
                 self.current_visible_ids.add(item["Id"])
                 self.render_item_card(item)
-            
+
             self.setup_selection_bar_content()
             self.selection_bar.grid()
             self.watched_scroll.grid()
@@ -381,7 +383,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
 
         movies = [i for i in filtered_items if i["Type"] == "Movie"]
         episodes = [i for i in filtered_items if i["Type"] == "Episode"]
-        
+
         shows_groups = {}
         for ep in episodes:
             sname = ep.get("SeriesName") or "Unknown Series"
@@ -391,7 +393,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
 
         for item in movies:
             self.render_item_card(item)
-            
+
         for sname, eps in sorted(shows_groups.items()):
             self.render_show_group_card(sname, eps)
 
@@ -418,7 +420,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
         )
         card.pack(fill="x", pady=1, padx=2)
         card.grid_columnconfigure(1, weight=1)
-        
+
         cb_var = ctk.BooleanVar(value=item_id in self.selected_items)
         cb = ctk.CTkCheckBox(
             card,
@@ -431,21 +433,21 @@ class JellyfinDashboard(ctk.CTkToplevel):
         )
         cb.grid(row=0, column=0, padx=(15, 5), pady=15, sticky="w")
         self.item_checkboxes[item_id] = cb
-        
+
         info = ctk.CTkFrame(card, fg_color="transparent")
         info.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-        
+
         type_badge = "🎬" if item["Type"] == "Movie" else "📺"
         is_protected = bool(item.get("CollectionIds"))
         name_text = item["Name"]
         if is_protected:
             name_text = f"🔒 {name_text}"
-            
+
         if item["Type"] == "Episode" and item.get("SeasonNumber") is not None:
             s = str(item.get("SeasonNumber")).zfill(2)
             e = str(item.get("EpisodeNumber")).zfill(2)
             name_text = f"S{s}E{e} - {name_text}"
-            
+
         ctk.CTkLabel(
             info,
             text=f"{type_badge}  {name_text}",
@@ -454,7 +456,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
             justify="left",
             wraplength=400,
         ).pack(fill="x")
-        
+
         ctk.CTkLabel(
             info,
             text=f"Watched by: {', '.join(item['WatchedBy'])}",
@@ -462,7 +464,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
             font=("Segoe UI", 11),
             text_color="#3498db",
         ).pack(fill="x", pady=(2, 0))
-        
+
         ctk.CTkLabel(
             info,
             text=item["Path"],
@@ -472,7 +474,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
             justify="left",
             wraplength=400,
         ).pack(fill="x", pady=(5, 0))
-        
+
         ctk.CTkButton(
             card,
             text="🗑",
@@ -482,7 +484,9 @@ class JellyfinDashboard(ctk.CTkToplevel):
             text_color="#e74c3c",
             hover_color=("#ffebec", "#2d1a1a"),
             font=("Segoe UI", 20),
-            command=lambda i=item["Id"], n=item["Name"], r=card: self.confirm_delete(i, n, r),
+            command=lambda i=item["Id"], n=item["Name"], r=card: self.confirm_delete(
+                i, n, r
+            ),
         ).grid(row=0, column=2, padx=15, pady=10, sticky="e")
 
     def render_show_group_card(self, sname, episodes):
@@ -492,11 +496,11 @@ class JellyfinDashboard(ctk.CTkToplevel):
             fg_color=("#f9f9f9", "#151515"),
             corner_radius=4,
             border_width=1,
-            border_color=("#e0e0e0", "#2b2b2b")
+            border_color=("#e0e0e0", "#2b2b2b"),
         )
         card.pack(fill="x", pady=4, padx=5)
         card.grid_columnconfigure(1, weight=1)
-        
+
         all_selected = all(eid in self.selected_items for eid in ep_ids)
         cb_var = ctk.BooleanVar(value=all_selected)
         cb = ctk.CTkCheckBox(
@@ -510,30 +514,30 @@ class JellyfinDashboard(ctk.CTkToplevel):
         )
         cb.grid(row=0, column=0, padx=(15, 5), pady=20, sticky="w")
         self.group_checkboxes[sname] = cb
-        
+
         info = ctk.CTkFrame(card, fg_color="transparent")
         info.grid(row=0, column=1, sticky="nsew", padx=10, pady=15)
-        
+
         ctk.CTkLabel(
             info,
             text=f"📺 {sname}",
             anchor="w",
             font=("Segoe UI", 16, "bold"),
-            text_color="#3498db"
+            text_color="#3498db",
         ).pack(fill="x")
-        
+
         count = len(episodes)
         ctk.CTkLabel(
             info,
             text=f"{count} watched episode{'s' if count > 1 else ''}",
             anchor="w",
             font=("Segoe UI", 11),
-            text_color="gray"
+            text_color="gray",
         ).pack(fill="x")
-        
+
         btn_f = ctk.CTkFrame(card, fg_color="transparent")
         btn_f.grid(row=0, column=2, padx=15)
-        
+
         ctk.CTkButton(
             btn_f,
             text="VIEW EPISODES",
@@ -542,7 +546,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
             fg_color="#3498db",
             hover_color="#2980b9",
             font=("Segoe UI", 11, "bold"),
-            command=lambda s=sname: self.set_show_filter(s)
+            command=lambda s=sname: self.set_show_filter(s),
         ).pack(pady=5)
 
     def toggle_group_selection(self, ep_ids, var):
@@ -553,7 +557,6 @@ class JellyfinDashboard(ctk.CTkToplevel):
             for eid in ep_ids:
                 self.selected_items.discard(eid)
         self.update_selection_ui()
-
 
     def setup_selection_bar_content(self):
         for w in self.selection_bar.winfo_children():
@@ -617,12 +620,13 @@ class JellyfinDashboard(ctk.CTkToplevel):
             self.btn_delete_selected.configure(
                 state="disabled", text="🗑 DELETE SELECTED (0)"
             )
-        
-        if self.current_visible_ids and self.current_visible_ids.issubset(self.selected_items):
+
+        if self.current_visible_ids and self.current_visible_ids.issubset(
+            self.selected_items
+        ):
             self.check_all_var.set(True)
         else:
             self.check_all_var.set(False)
-
 
     def delete_selected(self):
         count = len(self.selected_items)
@@ -666,13 +670,13 @@ class JellyfinDashboard(ctk.CTkToplevel):
             return
         for w in self.streams_scroll.winfo_children():
             w.destroy()
-        
+
         sessions = self.app.last_jelly_sessions
         managed_user = getattr(self.app, "jellyfin_managed_user", "")
-        
+
         your_sessions = {}
         server_sessions = {}
-        
+
         for sid, info in sessions.items():
             user = info.get("user") or "System/TV"
             if managed_user and user.lower() == managed_user.lower():
@@ -690,7 +694,7 @@ class JellyfinDashboard(ctk.CTkToplevel):
             ).pack(fill="x", padx=10, pady=(10, 5))
             for sid, info in your_sessions.items():
                 self.render_session_card(sid, info, is_managed=True)
-        
+
         if server_sessions:
             ctk.CTkLabel(
                 self.streams_scroll,
@@ -712,25 +716,38 @@ class JellyfinDashboard(ctk.CTkToplevel):
 
     def render_session_card(self, sid, info, is_managed=False):
         card = ctk.CTkFrame(
-            self.streams_scroll, fg_color=("#ffffff", "#1a1a1a"), corner_radius=8, border_width=1, border_color=("#e0e0e0", "#2b2b2b")
+            self.streams_scroll,
+            fg_color=("#ffffff", "#1a1a1a"),
+            corner_radius=8,
+            border_width=1,
+            border_color=("#e0e0e0", "#2b2b2b"),
         )
         card.pack(fill="x", pady=6, padx=10)
         card.grid_columnconfigure(0, weight=1)
-        
+
         info_f = ctk.CTkFrame(card, fg_color="transparent")
         info_f.grid(row=0, column=0, sticky="nsew", padx=15, pady=15)
-        
+
         header_f = ctk.CTkFrame(info_f, fg_color="transparent")
         header_f.pack(fill="x")
-        
+
         ctk.CTkLabel(
-            header_f, text="▶ " + info["title"], font=("Segoe UI", 16, "bold"), anchor="w", text_color="#3498db"
+            header_f,
+            text="▶ " + info["title"],
+            font=("Segoe UI", 16, "bold"),
+            anchor="w",
+            text_color="#3498db",
         ).pack(side="left", fill="x", expand=True)
-        
-        client_badge = ctk.CTkFrame(header_f, fg_color=("#f0f0f0", "#2a2a2a"), corner_radius=4)
+
+        client_badge = ctk.CTkFrame(
+            header_f, fg_color=("#f0f0f0", "#2a2a2a"), corner_radius=4
+        )
         client_badge.pack(side="right", padx=5)
         ctk.CTkLabel(
-            client_badge, text=f"📺 {info['client']}", font=("Segoe UI", 10, "bold"), text_color="gray"
+            client_badge,
+            text=f"📺 {info['client']}",
+            font=("Segoe UI", 10, "bold"),
+            text_color="gray",
         ).pack(padx=8, pady=2)
 
         ctk.CTkLabel(
@@ -743,54 +760,111 @@ class JellyfinDashboard(ctk.CTkToplevel):
 
         ctrl_f = ctk.CTkFrame(info_f, fg_color=("#f8f9fa", "#151515"), corner_radius=6)
         ctrl_f.pack(fill="x", pady=(5, 0), ipady=5, ipadx=5)
-        
-        btn_style = {"width": 35, "height": 30, "font": ("Segoe UI", 12, "bold"), "corner_radius": 4}
-        
+
+        btn_style = {
+            "width": 35,
+            "height": 30,
+            "font": ("Segoe UI", 12, "bold"),
+            "corner_radius": 4,
+        }
+
         ctk.CTkButton(
-            ctrl_f, text="⏯", **btn_style, fg_color="#3498db", hover_color="#2980b9",
-            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "PlayPause"))
+            ctrl_f,
+            text="⏯",
+            **btn_style,
+            fg_color="#3498db",
+            hover_color="#2980b9",
+            command=lambda s=sid: self.app.run_async(
+                self.app.jellyfin_api.send_command(s, "PlayPause")
+            ),
         ).pack(side="left", padx=3)
-        
+
         ctk.CTkButton(
-            ctrl_f, text="⏹", **btn_style, fg_color="#e74c3c", hover_color="#c0392b",
-            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "Stop"))
+            ctrl_f,
+            text="⏹",
+            **btn_style,
+            fg_color="#e74c3c",
+            hover_color="#c0392b",
+            command=lambda s=sid: self.app.run_async(
+                self.app.jellyfin_api.send_command(s, "Stop")
+            ),
         ).pack(side="left", padx=3)
 
         sep = ctk.CTkFrame(ctrl_f, width=2, height=20, fg_color=("#d0d0d0", "#333333"))
         sep.pack(side="left", padx=8, pady=5)
 
         ctk.CTkButton(
-            ctrl_f, text="⏪ 10s", width=60, height=30, font=("Segoe UI", 11, "bold"), corner_radius=4,
-            fg_color=("#e0e0e0", "#333333"), text_color=("#000000", "#ffffff"), hover_color=("#d0d0d0", "#444444"),
-            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.seek_relative(s, -10))
+            ctrl_f,
+            text="⏪ 10s",
+            width=60,
+            height=30,
+            font=("Segoe UI", 11, "bold"),
+            corner_radius=4,
+            fg_color=("#e0e0e0", "#333333"),
+            text_color=("#000000", "#ffffff"),
+            hover_color=("#d0d0d0", "#444444"),
+            command=lambda s=sid: self.app.run_async(
+                self.app.jellyfin_api.seek_relative(s, -10)
+            ),
         ).pack(side="left", padx=3)
 
         ctk.CTkButton(
-            ctrl_f, text="10s ⏩", width=60, height=30, font=("Segoe UI", 11, "bold"), corner_radius=4,
-            fg_color=("#e0e0e0", "#333333"), text_color=("#000000", "#ffffff"), hover_color=("#d0d0d0", "#444444"),
-            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.seek_relative(s, 10))
+            ctrl_f,
+            text="10s ⏩",
+            width=60,
+            height=30,
+            font=("Segoe UI", 11, "bold"),
+            corner_radius=4,
+            fg_color=("#e0e0e0", "#333333"),
+            text_color=("#000000", "#ffffff"),
+            hover_color=("#d0d0d0", "#444444"),
+            command=lambda s=sid: self.app.run_async(
+                self.app.jellyfin_api.seek_relative(s, 10)
+            ),
         ).pack(side="left", padx=3)
-        
+
         sep2 = ctk.CTkFrame(ctrl_f, width=2, height=20, fg_color=("#d0d0d0", "#333333"))
         sep2.pack(side="left", padx=8, pady=5)
 
-        ctk.CTkLabel(ctrl_f, text="🔊", font=("Segoe UI", 14)).pack(side="left", padx=(5, 2))
-        
+        ctk.CTkLabel(ctrl_f, text="🔊", font=("Segoe UI", 14)).pack(
+            side="left", padx=(5, 2)
+        )
+
         ctk.CTkButton(
-            ctrl_f, text="-", width=30, height=30, corner_radius=4, font=("Segoe UI", 14, "bold"),
-            fg_color="transparent", border_width=1, border_color=("#d0d0d0", "#444444"), text_color=("#333", "#ccc"),
-            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeDown"))
+            ctrl_f,
+            text="-",
+            width=30,
+            height=30,
+            corner_radius=4,
+            font=("Segoe UI", 14, "bold"),
+            fg_color="transparent",
+            border_width=1,
+            border_color=("#d0d0d0", "#444444"),
+            text_color=("#333", "#ccc"),
+            command=lambda s=sid: self.app.run_async(
+                self.app.jellyfin_api.send_command(s, "VolumeDown")
+            ),
         ).pack(side="left", padx=2)
-        
+
         ctk.CTkButton(
-            ctrl_f, text="+", width=30, height=30, corner_radius=4, font=("Segoe UI", 14, "bold"),
-            fg_color="transparent", border_width=1, border_color=("#d0d0d0", "#444444"), text_color=("#333", "#ccc"),
-            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.send_command(s, "VolumeUp"))
+            ctrl_f,
+            text="+",
+            width=30,
+            height=30,
+            corner_radius=4,
+            font=("Segoe UI", 14, "bold"),
+            fg_color="transparent",
+            border_width=1,
+            border_color=("#d0d0d0", "#444444"),
+            text_color=("#333", "#ccc"),
+            command=lambda s=sid: self.app.run_async(
+                self.app.jellyfin_api.send_command(s, "VolumeUp")
+            ),
         ).pack(side="left", padx=2)
 
         btn_f = ctk.CTkFrame(card, fg_color="transparent")
         btn_f.grid(row=0, column=1, padx=15, pady=15, sticky="e")
-        
+
         ctk.CTkButton(
             btn_f,
             text="DETAILS",
@@ -814,9 +888,11 @@ class JellyfinDashboard(ctk.CTkToplevel):
             text_color="#e74c3c",
             hover_color=("#ffebec", "#2d1a1a"),
             font=("Segoe UI", 11, "bold"),
-            command=lambda s=sid: self.app.run_async(self.app.jellyfin_api.kill_session(s)),
+            command=lambda s=sid: self.app.run_async(
+                self.app.jellyfin_api.kill_session(s)
+            ),
         ).pack(pady=4)
-        
+
         if not is_managed:
             ctk.CTkButton(
                 btn_f,
@@ -831,7 +907,9 @@ class JellyfinDashboard(ctk.CTkToplevel):
                 font=("Segoe UI", 11, "bold"),
                 command=lambda s=sid: self.app.run_async(
                     self.app.jellyfin_api.timed_kill(
-                        s, 5, "Admin: This stream will be terminated in 5 minutes for maintenance."
+                        s,
+                        5,
+                        "Admin: This stream will be terminated in 5 minutes for maintenance.",
                     )
                 ),
             ).pack(pady=4)
@@ -895,7 +973,8 @@ class StreamDetailsWindow(ctk.CTkToplevel):
         self.setup_ui()
 
     def format_ticks(self, ticks):
-        if not ticks: return "00:00:00"
+        if not ticks:
+            return "00:00:00"
         seconds = int(ticks / 10000000)
         h = seconds // 3600
         m = (seconds % 3600) // 60
@@ -904,13 +983,16 @@ class StreamDetailsWindow(ctk.CTkToplevel):
 
     def setup_ui(self):
         self.grid_columnconfigure(0, weight=1)
-        
+
         header = ctk.CTkFrame(self, fg_color="#3498db", corner_radius=0, height=80)
         header.grid(row=0, column=0, sticky="ew")
         header.grid_propagate(False)
-        
+
         ctk.CTkLabel(
-            header, text="STREAM DETAILS", font=("Segoe UI", 20, "bold"), text_color="white"
+            header,
+            text="STREAM DETAILS",
+            font=("Segoe UI", 20, "bold"),
+            text_color="white",
         ).pack(pady=25)
 
         scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
@@ -919,35 +1001,56 @@ class StreamDetailsWindow(ctk.CTkToplevel):
         scroll.grid_columnconfigure(0, weight=1)
 
         prog_f = self.create_section(scroll, "PLAYBACK PROGRESS")
-        
+
         pos_ticks = self.play_state.get("PositionTicks", 0)
         dur_ticks = self.item.get("RunTimeTicks", 0)
-        
+
         percent = (pos_ticks / dur_ticks) if dur_ticks > 0 else 0
-        
+
         self.prog_bar = ctk.CTkProgressBar(prog_f, height=12, progress_color="#3498db")
         self.prog_bar.pack(fill="x", pady=(10, 5))
         self.prog_bar.set(percent)
-        
+
         time_text = f"{self.format_ticks(pos_ticks)} / {self.format_ticks(dur_ticks)}"
         ctk.CTkLabel(prog_f, text=time_text, font=("Consolas", 14, "bold")).pack()
 
         qual_f = self.create_section(scroll, "STREAM QUALITY & TRANSCODING")
-        
+
         method = self.play_state.get("PlayMethod", "DirectPlay")
         method_color = "#2ecc71" if method == "DirectPlay" else "#e67e22"
-        
-        ctk.CTkLabel(qual_f, text=f"Method: {method}", font=("Segoe UI", 13, "bold"), text_color=method_color).pack(anchor="w")
-        
+
+        ctk.CTkLabel(
+            qual_f,
+            text=f"Method: {method}",
+            font=("Segoe UI", 13, "bold"),
+            text_color=method_color,
+        ).pack(anchor="w")
+
         if method == "Transcode":
             v_codec = self.trans_info.get("VideoCodec", "Unknown")
             a_codec = self.trans_info.get("AudioCodec", "Unknown")
             reason = self.trans_info.get("TranscodeReasons", ["Unknown Reason"])
-            
-            ctk.CTkLabel(qual_f, text=f"Video: {v_codec} • Audio: {a_codec}", font=("Segoe UI", 12)).pack(anchor="w")
-            ctk.CTkLabel(qual_f, text=f"Reason: {', '.join(reason)}", font=("Segoe UI", 11), text_color="gray", wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
+
+            ctk.CTkLabel(
+                qual_f,
+                text=f"Video: {v_codec} • Audio: {a_codec}",
+                font=("Segoe UI", 12),
+            ).pack(anchor="w")
+            ctk.CTkLabel(
+                qual_f,
+                text=f"Reason: {', '.join(reason)}",
+                font=("Segoe UI", 11),
+                text_color="gray",
+                wraplength=400,
+                justify="left",
+            ).pack(anchor="w", pady=(2, 0))
         else:
-            ctk.CTkLabel(qual_f, text="Direct streaming - No transcoding active.", font=("Segoe UI", 11), text_color="gray").pack(anchor="w")
+            ctk.CTkLabel(
+                qual_f,
+                text="Direct streaming - No transcoding active.",
+                font=("Segoe UI", 11),
+                text_color="gray",
+            ).pack(anchor="w")
 
         band_f = self.create_section(scroll, "BANDWIDTH MONITOR")
         bitrate = self.trans_info.get("Bitrate")
@@ -955,48 +1058,79 @@ class StreamDetailsWindow(ctk.CTkToplevel):
             bitrate_text = "N/A (Direct Play)"
         else:
             bitrate_text = f"{round(bitrate/1000000, 2)} Mbps" if bitrate else "Unknown"
-        
-        ctk.CTkLabel(band_f, text=f"Current Bitrate: {bitrate_text}", font=("Segoe UI", 13, "bold")).pack(anchor="w")
+
+        ctk.CTkLabel(
+            band_f,
+            text=f"Current Bitrate: {bitrate_text}",
+            font=("Segoe UI", 13, "bold"),
+        ).pack(anchor="w")
 
         meta_f = self.create_section(scroll, "NOW PLAYING METADATA")
-        
+
         res = f"{self.item.get('Width', '?')}x{self.item.get('Height', '?')}"
         fps = self.item.get("FramesPerSecond", "?")
-        
-        ctk.CTkLabel(meta_f, text=f"Resolution: {res}", font=("Segoe UI", 12)).pack(anchor="w")
-        ctk.CTkLabel(meta_f, text=f"Frame Rate: {fps} fps", font=("Segoe UI", 12)).pack(anchor="w")
-        ctk.CTkLabel(meta_f, text=f"Type: {self.item.get('Type')}", font=("Segoe UI", 12)).pack(anchor="w")
-        
+
+        ctk.CTkLabel(meta_f, text=f"Resolution: {res}", font=("Segoe UI", 12)).pack(
+            anchor="w"
+        )
+        ctk.CTkLabel(meta_f, text=f"Frame Rate: {fps} fps", font=("Segoe UI", 12)).pack(
+            anchor="w"
+        )
+        ctk.CTkLabel(
+            meta_f, text=f"Type: {self.item.get('Type')}", font=("Segoe UI", 12)
+        ).pack(anchor="w")
+
         path = self.item.get("Path", "Unknown")
-        ctk.CTkLabel(meta_f, text=f"File: {path}", font=("Consolas", 10), text_color="gray", wraplength=420, justify="left").pack(anchor="w", pady=(5, 0))
+        ctk.CTkLabel(
+            meta_f,
+            text=f"File: {path}",
+            font=("Consolas", 10),
+            text_color="gray",
+            wraplength=420,
+            justify="left",
+        ).pack(anchor="w", pady=(5, 0))
 
         msg_f = self.create_section(scroll, "REMOTE MESSAGE BROADCAST")
-        
-        self.msg_entry = ctk.CTkEntry(msg_f, placeholder_text="Type message to user...", height=35)
+
+        self.msg_entry = ctk.CTkEntry(
+            msg_f, placeholder_text="Type message to user...", height=35
+        )
         self.msg_entry.pack(fill="x", pady=5)
-        
+
         ctk.CTkButton(
-            msg_f, text="SEND ALERT TO PLAYER", fg_color="#3498db", hover_color="#2980b9",
-            command=self.send_custom_message
+            msg_f,
+            text="SEND ALERT TO PLAYER",
+            fg_color="#3498db",
+            hover_color="#2980b9",
+            command=self.send_custom_message,
         ).pack(fill="x", pady=(5, 0))
 
         ctk.CTkButton(
-            self, text="CLOSE DETAILS", height=40, fg_color="transparent", border_width=1,
-            command=self.destroy
+            self,
+            text="CLOSE DETAILS",
+            height=40,
+            fg_color="transparent",
+            border_width=1,
+            command=self.destroy,
         ).grid(row=2, column=0, pady=(0, 20), padx=20, sticky="ew")
 
     def create_section(self, parent, title):
         f = ctk.CTkFrame(parent, fg_color=("#f9f9f9", "#151515"), corner_radius=8)
         f.pack(fill="x", pady=10, padx=5, ipady=10, ipadx=10)
-        ctk.CTkLabel(f, text=title, font=("Segoe UI", 11, "bold"), text_color="#3498db").pack(anchor="w", pady=(0, 5))
+        ctk.CTkLabel(
+            f, text=title, font=("Segoe UI", 11, "bold"), text_color="#3498db"
+        ).pack(anchor="w", pady=(0, 5))
         return f
 
     def send_custom_message(self):
         text = self.msg_entry.get().strip()
-        if not text: return
-        
+        if not text:
+            return
+
         self.app.run_async(
-            self.app.jellyfin_api.send_message_to_session(self.sid, "Server Admin", text)
+            self.app.jellyfin_api.send_message_to_session(
+                self.sid, "Server Admin", text
+            )
         )
-        self.msg_entry.delete(0, 'end')
+        self.msg_entry.delete(0, "end")
         messagebox.showinfo("Sent", "Message broadcasted to the session.", parent=self)

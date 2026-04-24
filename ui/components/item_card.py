@@ -1,5 +1,6 @@
 import customtkinter as ctk
 
+
 class ItemCard(ctk.CTkFrame):
     def __init__(self, container, app):
         super().__init__(
@@ -54,7 +55,11 @@ class ItemCard(ctk.CTkFrame):
         self.title_lbl.bind("<Button-1>", lambda e: self._on_clicked())
 
         self.sub_lbl = ctk.CTkLabel(
-            self.info_f, text="", font=("Segoe UI", 11), text_color="#3498db", cursor="hand2"
+            self.info_f,
+            text="",
+            font=("Segoe UI", 11),
+            text_color="#3498db",
+            cursor="hand2",
         )
         self.sub_lbl.pack(side="left")
         self.sub_lbl.bind("<Button-1>", lambda e: self._on_clicked())
@@ -97,6 +102,7 @@ class ItemCard(ctk.CTkFrame):
         )
 
         if not ctk_poster and p_path:
+
             def _on_item_poster_loaded(img):
                 if img and self.winfo_exists():
                     try:
@@ -109,9 +115,10 @@ class ItemCard(ctk.CTkFrame):
                         )
                     except Exception:
                         pass
+
             self.app.run_async(
                 self.app.tmdb_api.get_poster_image(p_path, size=(160, 240)),
-                _on_item_poster_loaded
+                _on_item_poster_loaded,
             )
 
         if rating > 0:

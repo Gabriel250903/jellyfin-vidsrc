@@ -7,10 +7,6 @@ import sys
 import queue
 import asyncio
 import webbrowser
-
-VERSION = "1.1.0"
-REPO = "Gabriel250903/jellyfin-vidsrc"
-
 from core.queue_manager import DownloadQueueManager
 from core.download_controller import DownloadController
 from core.event_system import events
@@ -21,6 +17,10 @@ from api.tmdb_api import TMDBAPI
 from api.discord_rpc import DiscordRPCManager
 from ui.components.sidebar_mixin import SidebarMixin
 from ui.components.main_view_mixin import MainViewMixin
+from core.utils import resource_path
+
+VERSION = "1.1.0"
+REPO = "Gabriel250903/jellyfin-vidsrc"
 
 
 class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
@@ -28,6 +28,16 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
         ctk.CTk.__init__(self)
 
         self.title("VidSrc Jellyfin")
+
+        try:
+            self.iconbitmap(resource_path("icon.ico"))
+        except Exception as e:
+            try:
+                self.iconbitmap("icon.ico")
+                print(f"Icon Loaded from local path. Bundled path error: {e}")
+            except Exception as e2:
+                print(f"Icon Error: All loading methods failed. {e2}")
+
         self.geometry("1350x1050")
         self.minsize(1000, 800)
         ctk.set_appearance_mode("dark")
@@ -44,6 +54,7 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
         self.eta_text = "ETA: --:--"
         self.season_data = {}
 
+        # Load configuration values
         self.history = config.get("history")
         self.tmdb_api_key = config.get("api_key")
         self.discord_webhook = config.get("discord_webhook")
@@ -100,6 +111,7 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
+        # Setup UI Components
         self.setup_sidebar()
         self.setup_main_view()
         self.load_settings()
@@ -321,15 +333,29 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
                         os.environ.get("TEMP", "."),
                         "jellyfin-vidsrc-update.exe",
                     )
-                    success = await self.updater.download_update(res["download_url"], temp_exe)
+                    success = await self.updater.download_update(
+                        res["download_url"], temp_exe
+                    )
                     if success:
-                        self.after(0, lambda: self._show_restart_button(temp_exe, latest_version))
+                        self.after(
+                            0,
+                            lambda: self._show_restart_button(temp_exe, latest_version),
+                        )
                 else:
-                    self._show_update_dialog(latest_version, html_url, can_auto=True, download_url=res["download_url"])
+                    self._show_update_dialog(
+                        latest_version,
+                        html_url,
+                        can_auto=True,
+                        download_url=res["download_url"],
+                    )
             else:
-                self.after(0, lambda: self._show_update_dialog(latest_version, html_url))
+                self.after(
+                    0, lambda: self._show_update_dialog(latest_version, html_url)
+                )
         elif res["status"] == "up_to_date" and not silent:
-            events.emit("show_info", "Update", "You are already using the latest version!")
+            events.emit(
+                "show_info", "Update", "You are already using the latest version!"
+            )
         elif res["status"] == "error" and not silent:
             events.emit("show_error", "Update Error", res["message"])
 
@@ -355,20 +381,35 @@ class VidSrcJellyfin(SidebarMixin, MainViewMixin, ctk.CTk):
             self.on_closing()
             sys.exit(0)
 
-    def _show_update_dialog(self, latest_version, html_url, can_auto=False, download_url=None):
+    def _show_update_dialog(
+        self, latest_version, html_url, can_auto=False, download_url=None
+    ):
         msg = f"A new version ({latest_version}) is available!\n\nCurrent version: {VERSION}\n\n"
         if can_auto:
-            if messagebox.askyesno("Update Available", msg + "Would you like to download and install it now?", parent=self):
-                temp_exe = os.path.join(os.environ.get("TEMP", "."), "jellyfin-vidsrc-update.exe")
+            if messagebox.askyesno(
+                "Update Available",
+                msg + "Would you like to download and install it now?",
+                parent=self,
+            ):
+                temp_exe = os.path.join(
+                    os.environ.get("TEMP", "."), "jellyfin-vidsrc-update.exe"
+                )
                 self.log(f"Updater: Downloading v{latest_version}...")
-                
+
                 def _on_download_done(success):
                     if success:
                         self._apply_update(temp_exe)
-                
-                self.run_async(self.updater.download_update(download_url, temp_exe), _on_download_done)
+
+                self.run_async(
+                    self.updater.download_update(download_url, temp_exe),
+                    _on_download_done,
+                )
         else:
-            if messagebox.askyesno("Update Available", msg + "Would you like to go to the download page?", parent=self):
+            if messagebox.askyesno(
+                "Update Available",
+                msg + "Would you like to go to the download page?",
+                parent=self,
+            ):
                 webbrowser.open(html_url)
 
     def on_closing(self):

@@ -7,7 +7,15 @@ from core.event_system import events
 
 
 class DownloadHandler(FileSystemEventHandler):
-    def __init__(self, controller, folder, tmdb_id, task_id=None, media_name=None, media_year=None):
+    def __init__(
+        self,
+        controller,
+        folder,
+        tmdb_id,
+        task_id=None,
+        media_name=None,
+        media_year=None,
+    ):
         self.controller = controller
         self.folder = os.path.normpath(os.path.abspath(folder))
         self.tmdb_id = tmdb_id
@@ -60,7 +68,10 @@ class DownloadHandler(FileSystemEventHandler):
                 if self.controller.config.get("video_only"):
                     return
                 if not self.controller.config.get("sub_only"):
-                    events.emit("log", f"FILE HANDLER: Subtitle downloaded for {os.path.basename(path)}")
+                    events.emit(
+                        "log",
+                        f"FILE HANDLER: Subtitle downloaded for {os.path.basename(path)}",
+                    )
                     return
 
             fname = os.path.basename(path)

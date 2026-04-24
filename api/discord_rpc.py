@@ -65,7 +65,7 @@ class DiscordRPCManager:
                 return
 
             if self.presence:
-                await self.presence.clear() # type: ignore
+                await self.presence.clear()  # type: ignore
                 self.presence = None
 
             self.presence = AioPresence(client_id)
@@ -83,8 +83,8 @@ class DiscordRPCManager:
     async def _cleanup_presence(self):
         if self.presence:
             try:
-                await self.presence.clear() # type: ignore
-                await self.presence.close() # type: ignore
+                await self.presence.clear()  # type: ignore
+                await self.presence.close()  # type: ignore
             except:
                 pass
             self.presence = None
@@ -126,13 +126,15 @@ class DiscordRPCManager:
 
         jellyfin_url = self._get_config("jellyfin_url")
         jellyfin_api_key = self._get_config("jellyfin_api_key")
-        rpc_target_user = self._get_config("jellyfin_managed_user") or self._get_config("rpc_target_user")
+        rpc_target_user = self._get_config("jellyfin_managed_user") or self._get_config(
+            "rpc_target_user"
+        )
         tmdb_api_key = self._get_config("tmdb_api_key")
         rpc_show_server = self._get_config("rpc_show_server")
 
         if not jellyfin_url or not jellyfin_api_key:
             if self.presence:
-                await self.presence.clear() # type: ignore
+                await self.presence.clear()  # type: ignore
             return
 
         headers = {"X-Emby-Token": jellyfin_api_key}
@@ -148,7 +150,9 @@ class DiscordRPCManager:
         except Exception as e:
             err_msg = str(e)
             if self._last_rpc_error != err_msg:
-                events.emit("log", f"RPC ERROR: Failed to fetch Jellyfin sessions: {err_msg}")
+                events.emit(
+                    "log", f"RPC ERROR: Failed to fetch Jellyfin sessions: {err_msg}"
+                )
                 self._last_rpc_error = err_msg
             return
 
@@ -234,7 +238,9 @@ class DiscordRPCManager:
                                 details_data = await details_res.json()
                                 poster_path = details_data.get("poster_path")
                                 if poster_path:
-                                    large_image = f"https://image.tmdb.org/t/p/w500{poster_path}"
+                                    large_image = (
+                                        f"https://image.tmdb.org/t/p/w500{poster_path}"
+                                    )
                                     self.tmdb_cache[cache_key] = large_image
                 except Exception as e:
                     events.emit("log", f"RPC ERROR: Failed to fetch TMDB data: {e}")
@@ -259,4 +265,4 @@ class DiscordRPCManager:
                 pos_seconds = int(pos_ticks / 10000000)
                 kwargs["start"] = int(time.time()) - pos_seconds
 
-            await self.presence.update(**kwargs) # type: ignore
+            await self.presence.update(**kwargs)  # type: ignore

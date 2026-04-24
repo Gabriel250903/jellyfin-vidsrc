@@ -96,10 +96,16 @@ class SettingsWindow(ctk.CTkToplevel):
         self.j_key.insert(0, self.parent.jellyfin_api_key)
 
         ctk.CTkLabel(self.j_frame, text="Managed User:").pack(padx=20, anchor="w")
-        self.user_var = ctk.StringVar(value=self.parent.jellyfin_managed_user or "Fetch users...")
+        self.user_var = ctk.StringVar(
+            value=self.parent.jellyfin_managed_user or "Fetch users..."
+        )
         self.user_menu = ctk.CTkOptionMenu(
             self.j_frame,
-            values=[self.parent.jellyfin_managed_user] if self.parent.jellyfin_managed_user else ["None"],
+            values=(
+                [self.parent.jellyfin_managed_user]
+                if self.parent.jellyfin_managed_user
+                else ["None"]
+            ),
             variable=self.user_var,
             fg_color="#3498db",
             button_color="#3498db",
@@ -175,19 +181,24 @@ class SettingsWindow(ctk.CTkToplevel):
             progress_color="#3498db",
         ).pack(pady=5, padx=20, anchor="w")
 
-        ctk.CTkLabel(
-            self.scroll, text="SYSTEM", font=("Segoe UI", 12, "bold")
-        ).pack(pady=(20, 5), padx=20, anchor="w")
-        
+        ctk.CTkLabel(self.scroll, text="SYSTEM", font=("Segoe UI", 12, "bold")).pack(
+            pady=(20, 5), padx=20, anchor="w"
+        )
+
         from ui.app import VERSION
-        ctk.CTkLabel(self.scroll, text=f"Current Version: v{VERSION}").pack(padx=20, anchor="w")
-        
+
+        ctk.CTkLabel(self.scroll, text=f"Current Version: v{VERSION}").pack(
+            padx=20, anchor="w"
+        )
+
         self.btn_check_update = ctk.CTkButton(
             self.scroll,
             text="CHECK FOR UPDATES",
             fg_color="#27ae60",
             hover_color="#2ecc71",
-            command=lambda: self.parent.run_async(self.parent.check_for_updates(silent=False)),
+            command=lambda: self.parent.run_async(
+                self.parent.check_for_updates(silent=False)
+            ),
         )
         self.btn_check_update.pack(pady=10, padx=20, fill="x")
 
@@ -206,7 +217,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.parent.discord_webhook = self.discord_entry.get().strip()
         self.parent.jellyfin_url = self.j_url.get().strip().rstrip("/")
         self.parent.jellyfin_api_key = self.j_key.get().strip()
-        
+
         user = self.user_var.get()
         if user and user != "Fetch users..." and user != "None":
             self.parent.jellyfin_managed_user = user

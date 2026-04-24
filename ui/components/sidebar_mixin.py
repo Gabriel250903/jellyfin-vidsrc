@@ -1,7 +1,10 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import os
+from PIL import Image
 from typing import List, Any, Optional
+from core.utils import resource_path
+
 
 class SidebarMixin:
     def setup_sidebar(self: Any):
@@ -16,19 +19,38 @@ class SidebarMixin:
         self.sidebar.grid_rowconfigure(7, weight=1)
         self.sidebar.grid_columnconfigure(0, weight=1)
 
-        self.logo_label = ctk.CTkLabel(
-            self.sidebar,
-            text="VidSrc Jellyfin",
-            font=("Segoe UI", 22, "bold"),
-            text_color="#3498db",
-        )
+        # Brand Logo with Icon
+        try:
+            logo_path = resource_path("icon_sidebar.png")
+            if not os.path.exists(logo_path):
+                logo_path = "icon_sidebar.png"
+
+            img = Image.open(logo_path)
+            self.logo_image = ctk.CTkImage(img, size=(120, 120))
+            self.logo_label = ctk.CTkLabel(
+                self.sidebar,
+                text="VidSrc Jellyfin",
+                image=self.logo_image,
+                compound="top",
+                font=("Segoe UI", 24, "bold"),
+                text_color="#3498db",
+            )
+        except Exception:
+            self.logo_label = ctk.CTkLabel(
+                self.sidebar,
+                text="VidSrc Jellyfin",
+                font=("Segoe UI", 24, "bold"),
+                text_color="#3498db",
+            )
+
         self.logo_label.grid(row=0, column=0, pady=(30, 15))
 
         self.mode_switch = ctk.CTkSegmentedButton(
             self.sidebar,
             values=["TV Show", "Movie"],
             command=lambda v: self.on_mode_change(v),
-            height=35,
+            height=40,
+            font=("Segoe UI", 13, "bold"),
             selected_color="#3498db",
         )
         self.mode_switch.grid(row=3, column=0, pady=15, padx=20, sticky="ew")
@@ -79,8 +101,8 @@ class SidebarMixin:
         self.btn_queue = ctk.CTkButton(
             self.sidebar,
             text="⏳ PENDING QUEUE",
-            font=("Segoe UI", 12, "bold"),
-            height=30,
+            font=("Segoe UI", 13, "bold"),
+            height=40,
             fg_color="#3498db",
             hover_color="#2980b9",
             command=self.open_queue_window,
@@ -90,8 +112,8 @@ class SidebarMixin:
         self.btn_jelly_dashboard = ctk.CTkButton(
             self.sidebar,
             text="📺 JELLYFIN DASHBOARD",
-            font=("Segoe UI", 12, "bold"),
-            height=30,
+            font=("Segoe UI", 13, "bold"),
+            height=40,
             fg_color="#3498db",
             hover_color="#2980b9",
             command=self.open_jellyfin_dashboard,
@@ -110,7 +132,8 @@ class SidebarMixin:
         self.btn_rpc_settings = ctk.CTkButton(
             self.bottom_sidebar,
             text="🎮 Discord RPC",
-            height=30,
+            height=40,
+            font=("Segoe UI", 13, "bold"),
             fg_color="#3498db",
             hover_color="#2980b9",
             command=self.open_rpc_settings,
@@ -119,7 +142,8 @@ class SidebarMixin:
         self.btn_choose_root = ctk.CTkButton(
             self.bottom_sidebar,
             text="📁 Library Path",
-            height=30,
+            height=40,
+            font=("Segoe UI", 13, "bold"),
             fg_color="#3498db",
             hover_color="#2980b9",
             command=self.choose_root,
@@ -128,7 +152,8 @@ class SidebarMixin:
         self.btn_settings = ctk.CTkButton(
             self.bottom_sidebar,
             text="⚙ Settings",
-            height=30,
+            height=40,
+            font=("Segoe UI", 13, "bold"),
             fg_color="#3498db",
             hover_color="#2980b9",
             command=self.open_settings,
